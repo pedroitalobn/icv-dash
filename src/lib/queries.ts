@@ -2,7 +2,14 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
-import { PAID_STATUSES } from "./format";
+import {
+  PAID_STATUSES,
+  formatBRL,
+  formatDate,
+  maskName,
+  statusLabel,
+  paymentMethodLabel,
+} from "./format";
 import { type Period, periodToDate, type PaymentFilters } from "./periods";
 
 // Re-export para quem já importava daqui.
@@ -629,6 +636,197 @@ export async function getLastImport(): Promise<{ last: Date | null; count: numbe
     FROM "donations"
   `);
   return { last: row?.last ?? null, count: Number(row?.count ?? 0) };
+}
+
+// ============================ Detalhe dos cards =============================
+
+export interface CardDetail {
+  title: string;
+  subtitle?: string;
+  columns: string[];
+  rows: string[][];
+  aligns?: ("left" | "right")[];
+}
+
+/** Condição de "vencida" (em aberto, vencimento < hoje). */
+const OWED = Prisma.sql`"status" NOT IN ('paid','confirmed','refunded','cancelled','chargeback')`;
+
+/** Retorna os dados por trás de um card específico, respeitando os filtros. */
+export async function getCardDetail(
+  card: string,
+  f: PaymentFilters
+): Promise<CardDetail> {
+  const money: ("left" | "right")[] = [];
+
+  switch (card) {
+    case "total":
+    case "mom": {
+      const rows = await prisma.$queryRaw<{ mes: string; qtd: bigint; total: number }[]>(Prisma.sql`
+        SELECT to_char(date_trunc('month', ${EFFECTIVE_DATE}), 'YYYY-MM') AS mes,
+               COUNT(*)::bigint AS qtd,
+               COALESCE(SUM("amount"),0)::float8 AS total
+        FROM "donations"
+        WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
+        GROUP BY 1 ORDER BY 1 DESC LIMIT 24
+      `);
+      return {
+        title: "Arrecadação por mês",
+        columns: ["Mês", "Doações", "Total"],
+        aligns: ["left", "right", "right"],
+        rows: rows.map((r) => [r.mes, String(Number(r.qtd)), formatBRL(r.total)]),
+      };
+    }
+
+    case "ticket": {
+      const b = await getAmountBuckets(f);
+      return {
+        title: "Distribuição por faixa de valor",
+        columns: ["Faixa", "Doações", "Total"],
+        aligns: ["left", "right", "right"],
+        rows: b.map((r) => [r.faixa, String(r.quantidade), formatBRL(r.total)]),
+      };
+    }
+
+    case "doadores":
+    case "doadoresbase": {
+      const t = await getTopDonors(f, 200);
+      return {
+        title: "Doadores (por total no período)",
+        subtitle: `${t.length} doadores`,
+        columns: ["Doador", "Doações", "Total"],
+        aligns: ["left", "right", "right"],
+        rows: t.map((d) => [maskName(d.name) || d.email || "—", String(d.quantidade), formatBRL(d.total)]),
+      };
+    }
+
+    case "recorrentes3": {
+      const d = await listDonorsWithNRecurring(3, f);
+      return {
+        title: "Doadores com 3 cobranças recorrentes",
+        subtitle: `${d.length} doadores`,
+        columns: ["Doador", "Projeto", "Recorrências", "Total"],
+        aligns: ["left", "left", "right", "right"],
+        rows: d.map((x) => [maskName(x.name) || "—", x.project ?? "—", `${x.recorrentes}x`, formatBRL(x.total)]),
+      };
+    }
+
+    case "mrr": {
+      const rows = await prisma.$queryRaw<{ name: string | null; qtd: bigint; total: number }[]>(Prisma.sql`
+        SELECT c."full_name" AS name, COUNT(*)::bigint AS qtd, COALESCE(SUM(d."amount"),0)::float8 AS total
+        FROM "donations" d JOIN "donors" c ON c."id"=d."donor_id"
+        WHERE d."is_recurring"=true AND d."status" = ANY(${PAID_STATUSES})
+          ${(() => {
+            const s: Prisma.Sql[] = [];
+            if (f.project) s.push(Prisma.sql`AND d."project" = ${f.project}`);
+            if (f.paymentMethod) s.push(Prisma.sql`AND d."payment_method" = ${f.paymentMethod}`);
+            if (f.origin === "import") s.push(Prisma.sql`AND d."imported_at" IS NOT NULL`);
+            if (f.origin === "asaas") s.push(Prisma.sql`AND d."imported_at" IS NULL`);
+            return s.length ? Prisma.join(s, " ") : Prisma.empty;
+          })()}
+        GROUP BY c."id", c."full_name" ORDER BY total DESC LIMIT 200
+      `);
+      return {
+        title: "Doadores recorrentes",
+        subtitle: `${rows.length} recorrentes`,
+        columns: ["Doador", "Recorrências", "Total"],
+        aligns: ["left", "right", "right"],
+        rows: rows.map((r) => [maskName(r.name) || "—", `${Number(r.qtd)}x`, formatBRL(r.total)]),
+      };
+    }
+
+    case "inadimplencia":
+    case "mrrinad": {
+      const onlyRec = card === "mrrinad" ? Prisma.sql`AND d."is_recurring" = true` : Prisma.empty;
+      const scope: Prisma.Sql[] = [];
+      if (f.project) scope.push(Prisma.sql`AND d."project" = ${f.project}`);
+      if (f.paymentMethod) scope.push(Prisma.sql`AND d."payment_method" = ${f.paymentMethod}`);
+      if (f.origin === "import") scope.push(Prisma.sql`AND d."imported_at" IS NOT NULL`);
+      if (f.origin === "asaas") scope.push(Prisma.sql`AND d."imported_at" IS NULL`);
+      const rows = await prisma.$queryRaw<
+        { name: string | null; method: string; amount: number; due: Date | null }[]
+      >(Prisma.sql`
+        SELECT c."full_name" AS name, d."payment_method" AS method,
+               d."amount"::float8 AS amount, d."due_date" AS due
+        FROM "donations" d JOIN "donors" c ON c."id"=d."donor_id"
+        WHERE d."status" NOT IN ('paid','confirmed','refunded','cancelled','chargeback')
+          AND d."due_date" < CURRENT_DATE ${onlyRec} ${scope.length ? Prisma.join(scope, " ") : Prisma.empty}
+        ORDER BY d."due_date" DESC LIMIT 300
+      `);
+      return {
+        title: card === "mrrinad" ? "Recorrentes em atraso" : "Cobranças vencidas (em aberto)",
+        subtitle: `${rows.length} cobranças`,
+        columns: ["Doador", "Forma", "Vencimento", "Valor"],
+        aligns: ["left", "left", "left", "right"],
+        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
+      };
+    }
+
+    case "areceber": {
+      const scope: Prisma.Sql[] = [];
+      if (f.project) scope.push(Prisma.sql`AND d."project" = ${f.project}`);
+      if (f.paymentMethod) scope.push(Prisma.sql`AND d."payment_method" = ${f.paymentMethod}`);
+      if (f.origin === "import") scope.push(Prisma.sql`AND d."imported_at" IS NOT NULL`);
+      if (f.origin === "asaas") scope.push(Prisma.sql`AND d."imported_at" IS NULL`);
+      const rows = await prisma.$queryRaw<
+        { name: string | null; method: string; amount: number; due: Date | null }[]
+      >(Prisma.sql`
+        SELECT c."full_name" AS name, d."payment_method" AS method,
+               d."amount"::float8 AS amount, d."due_date" AS due
+        FROM "donations" d JOIN "donors" c ON c."id"=d."donor_id"
+        WHERE d."status" NOT IN ('paid','confirmed','refunded','cancelled','chargeback')
+          AND (d."due_date" >= CURRENT_DATE OR d."due_date" IS NULL)
+          ${scope.length ? Prisma.join(scope, " ") : Prisma.empty}
+        ORDER BY d."due_date" ASC NULLS LAST LIMIT 300
+      `);
+      return {
+        title: "A receber (pendentes a vencer)",
+        subtitle: `${rows.length} cobranças`,
+        columns: ["Doador", "Forma", "Vencimento", "Valor"],
+        aligns: ["left", "left", "left", "right"],
+        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
+      };
+    }
+
+    case "maior": {
+      const rows = await prisma.$queryRaw<
+        { name: string | null; method: string; amount: number; eff: Date | null }[]
+      >(Prisma.sql`
+        SELECT c."full_name" AS name, d."payment_method" AS method,
+               d."amount"::float8 AS amount,
+               COALESCE(d."paid_at", d."confirmed_at", d."created_at") AS eff
+        FROM "donations" d JOIN "donors" c ON c."id"=d."donor_id"
+        WHERE ${(() => {
+          const base = f.status ? Prisma.sql`d."status" = ${f.status}` : Prisma.sql`d."status" = ANY(${PAID_STATUSES})`;
+          const s: Prisma.Sql[] = [base];
+          if (f.project) s.push(Prisma.sql`d."project" = ${f.project}`);
+          if (f.paymentMethod) s.push(Prisma.sql`d."payment_method" = ${f.paymentMethod}`);
+          if (f.origin === "import") s.push(Prisma.sql`d."imported_at" IS NOT NULL`);
+          if (f.origin === "asaas") s.push(Prisma.sql`d."imported_at" IS NULL`);
+          return Prisma.join(s, " AND ");
+        })()}
+        ORDER BY d."amount" DESC LIMIT 100
+      `);
+      return {
+        title: "Maiores doações",
+        columns: ["Doador", "Forma", "Data", "Valor"],
+        aligns: ["left", "left", "left", "right"],
+        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.eff), formatBRL(r.amount)]),
+      };
+    }
+
+    case "conversao": {
+      const b = await getStatusBreakdown(f);
+      return {
+        title: "Cobranças por status",
+        columns: ["Status", "Qtd", "Valor"],
+        aligns: ["left", "right", "right"],
+        rows: b.map((r) => [statusLabel(r.status), String(r.quantidade), formatBRL(r.total)]),
+      };
+    }
+
+    default:
+      return { title: "Detalhe", columns: ["Info"], rows: [["Sem detalhamento disponível."]] };
+  }
 }
 
 // =============================== Análises extras =============================

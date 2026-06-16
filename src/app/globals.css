@@ -518,6 +518,93 @@ label {
   overflow: hidden;
 }
 
+/* ------------------------- Card clicável + modal ---------------------------- */
+.card.clickable {
+  cursor: pointer;
+  position: relative;
+}
+.card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+.card-expand {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  color: var(--muted);
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.card.clickable:hover .card-expand {
+  opacity: 0.7;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  padding: 20px;
+  animation: fade 0.15s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  width: 760px;
+  max-width: 96vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.modal-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.modal-head .btn-ghost {
+  padding: 7px 12px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.modal-body {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-body table {
+  font-size: 13px;
+}
+.modal-body thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+
 /* --------------------------------- Mobile ----------------------------------- */
 @media (max-width: 820px) {
   .container {
