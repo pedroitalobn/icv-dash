@@ -82,6 +82,14 @@ export function maskName(full: string | null | undefined): string {
   return [first, ...rest].join(" ");
 }
 
+/** Nome do doador conforme permissão: revelado (admin) → completo; senão mascarado. */
+export function displayName(
+  full: string | null | undefined,
+  reveal: boolean
+): string {
+  return reveal ? titleCaseName(full) : maskName(full);
+}
+
 // --- Mapeamentos de origem (Asaas API e planilhas) → enums do CRM ---
 
 export function mapAsaasBillingType(billingType: string | null | undefined): string {

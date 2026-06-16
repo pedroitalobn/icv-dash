@@ -11,11 +11,16 @@ import {
   ORIGIN_OPTIONS,
 } from "@/lib/filters";
 
-export function FiltersBar() {
+export function FiltersBar({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [pinned, setPinned] = useState(false);
+  const revealed = params.get("reveal") === "1";
+
+  function toggleReveal() {
+    update({ reveal: revealed ? null : "1" }, false);
+  }
 
   useEffect(() => {
     const p = localStorage.getItem("icv-pin-filters") === "1";
@@ -191,6 +196,19 @@ export function FiltersBar() {
         >
           {pinned ? "📌 Filtros fixados" : "📌 Fixar filtros"}
         </a>
+        {isAdmin && (
+          <a
+            onClick={toggleReveal}
+            style={{
+              cursor: "pointer",
+              color: revealed ? "var(--brand)" : "var(--muted)",
+              fontWeight: 500,
+            }}
+            title="Apenas admin: mostrar/ocultar nomes completos dos doadores"
+          >
+            {revealed ? "👁 Dados revelados" : "🙈 Revelar dados"}
+          </a>
+        )}
       </div>
     </div>
   );

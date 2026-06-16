@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exportDonations } from "@/lib/queries";
 import { parseFilters } from "@/lib/filters";
-import { paymentMethodLabel, statusLabel, titleCaseName } from "@/lib/format";
+import { paymentMethodLabel, statusLabel, displayName } from "@/lib/format";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,9 @@ function fmtDate(d: Date | null): string {
 export async function GET(req: NextRequest) {
   const query = Object.fromEntries(req.nextUrl.searchParams.entries());
   const { paymentFilters, period } = parseFilters(query);
+
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "admin";
 
   const payments = await exportDonations(paymentFilters);
 
@@ -42,9 +46,9 @@ export async function GET(req: NextRequest) {
     lines.push(
       [
         p.id,
-        titleCaseName(p.customerName) || "",
-        p.customerEmail ?? "",
-        p.documentNumber ?? "",
+        displayName(p.customerName, isAdmin),
+        isAdmin ? p.customerEmail ?? "" : "",
+        isAdmin ? p.documentNumber ?? "" : "",
         p.project ?? "",
         paymentMethodLabel(p.billingType),
         statusLabel(p.status),

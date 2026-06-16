@@ -16,7 +16,7 @@ import {
   formatBRL,
   formatDate,
   statusLabel,
-  maskName,
+  displayName,
 } from "@/lib/format";
 import {
   getPaymentMethodBreakdown,
@@ -65,6 +65,12 @@ export default async function DashboardPage({
   const { paymentFilters } = f;
   const page = Math.max(1, Number(searchParams.page ?? "1") || 1);
   const pageSize = 15;
+
+  // Só admin pode desocultar nomes (mesmo que force ?reveal=1).
+  const isAdmin = user.role === "admin";
+  const revealParam =
+    (Array.isArray(searchParams.reveal) ? searchParams.reveal[0] : searchParams.reveal) === "1";
+  const reveal = isAdmin && revealParam;
 
   const [
     summary,
@@ -136,7 +142,7 @@ export default async function DashboardPage({
       <Topbar email={user.email} />
       <main className="container">
         {/* Filtros: período, intervalo de datas, status, forma, recorrência, busca */}
-        <FiltersBar />
+        <FiltersBar isAdmin={isAdmin} />
 
         {/* Gráfico de arrecadação (acima dos cards) */}
         <div className="section-title" style={{ marginTop: 8 }}>Arrecadação por dia</div>
@@ -312,7 +318,7 @@ export default async function DashboardPage({
               {topDonors.map((d, i) => (
                 <tr key={d.id}>
                   <td className="muted">{i + 1}</td>
-                  <td>{maskName(d.name) || d.email || d.id}</td>
+                  <td>{displayName(d.name, reveal) || d.email || d.id}</td>
                   <td className="muted">{d.quantidade}x</td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
                     {formatBRL(d.total)}
@@ -360,7 +366,7 @@ export default async function DashboardPage({
               {recurringDonors.map((d, i) => (
                 <tr key={d.id}>
                   <td className="muted">{i + 1}</td>
-                  <td>{maskName(d.name) || d.email || d.id}</td>
+                  <td>{displayName(d.name, reveal) || d.email || d.id}</td>
                   <td className="muted">{d.project ?? "—"}</td>
                   <td className="muted">{d.recorrentes}x</td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
@@ -411,7 +417,7 @@ export default async function DashboardPage({
               {payments.rows.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    {maskName(p.customerName) || p.customerEmail || p.id}
+                    {displayName(p.customerName, reveal) || p.customerEmail || p.id}
                     {p.isRecurring && <span className="tag-recurring">recorrente</span>}
                   </td>
                   <td className="muted">{p.project ?? "—"}</td>
