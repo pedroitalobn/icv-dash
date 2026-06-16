@@ -1,5 +1,5 @@
 // Interpretação dos filtros vindos da URL (querystring), usada pela página e pelo export.
-import { periodToDate, type Period, type PaymentFilters } from "./queries";
+import { periodToDate, type Period, type PaymentFilters } from "./periods";
 
 export const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: "7d", label: "7 dias" },

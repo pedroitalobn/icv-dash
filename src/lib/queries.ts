@@ -3,17 +3,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { PAID_STATUSES } from "./format";
+import { type Period, periodToDate, type PaymentFilters } from "./periods";
 
-export type Period = "7d" | "30d" | "90d" | "365d" | "all" | "custom";
-
-export function periodToDate(period: Period): Date | null {
-  if (period === "all" || period === "custom") return null;
-  const days = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 }[period];
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+// Re-export para quem já importava daqui.
+export { periodToDate };
+export type { Period, PaymentFilters };
 
 /// "Data efetiva" da doação usada nos cortes por período.
 const EFFECTIVE_DATE = Prisma.sql`COALESCE("paid_at", "confirmed_at", "created_at")`;
@@ -32,16 +26,6 @@ function dateAnd(
 }
 
 // --------------------------- Filtros da lista/export -------------------------
-
-export interface PaymentFilters {
-  since: Date | null;
-  until: Date | null;
-  status?: string | null;
-  paymentMethod?: string | null;
-  recurring?: "recurring" | "oneoff" | null;
-  project?: string | null;
-  q?: string | null;
-}
 
 /** WHERE da listagem de doações (aliases d. = donations, c. = donors). */
 function donationsWhere(f: PaymentFilters): Prisma.Sql {
