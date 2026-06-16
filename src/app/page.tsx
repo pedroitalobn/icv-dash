@@ -9,6 +9,7 @@ import { MonthlyProjectChart } from "@/components/MonthlyProjectChart";
 import { FiltersBar } from "@/components/FiltersBar";
 import { Collapsible } from "@/components/Collapsible";
 import { Sparkline } from "@/components/Sparkline";
+import { ClickableCard } from "@/components/ClickableCard";
 import { getCurrentUser } from "@/lib/session";
 import {
   paymentMethodLabel,
@@ -145,7 +146,7 @@ export default async function DashboardPage({
 
         {/* KPIs */}
         <div className="grid kpis">
-          <div className="card">
+          <ClickableCard card="total">
             <h3>Total arrecadado</h3>
             <div className="kpi-value green">{formatBRL(summary.totalArrecadado)}</div>
             <div className="kpi-sub">{summary.totalRecebidas} doações recebidas</div>
@@ -160,46 +161,46 @@ export default async function DashboardPage({
                 </span>
               )}
             </div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="doadores">
             <h3>Doadores únicos</h3>
             <div className="kpi-value">{summary.totalDoadores}</div>
             <div className="kpi-sub">no período selecionado</div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="ticket">
             <h3>Ticket médio</h3>
             <div className="kpi-value">{formatBRL(summary.ticketMedio)}</div>
             <div className="kpi-sub">por doação</div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="recorrentes3">
             <h3>Doadores c/ 3 recorrentes</h3>
             <div className="kpi-value green">{summary.doadoresComTresRecorrentes}</div>
             <div className="kpi-sub">exatamente 3 cobranças recorrentes pagas</div>
-          </div>
+          </ClickableCard>
         </div>
 
         {/* KPIs — recorrência, inadimplência, retenção */}
         <div className="grid kpis" style={{ marginTop: 16 }}>
-          <div className="card">
+          <ClickableCard card="mrr">
             <h3>MRR (receita recorrente)</h3>
             <div className="kpi-value green">{formatBRL(recurring.mrr)}</div>
             <div className="kpi-sub">
               {recurring.activeSubs} assinaturas ativas · {recurring.canceledSubs} canceladas
             </div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="inadimplencia">
             <h3>Inadimplência (em aberto)</h3>
             <div className="kpi-value red">{formatBRL(receivables.overdueValue)}</div>
             <div className="kpi-sub">
               {receivables.overdueCount} vencidas (vencimento &lt; hoje)
             </div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="areceber">
             <h3>A receber (pendentes)</h3>
             <div className="kpi-value amber">{formatBRL(receivables.pendingValue)}</div>
             <div className="kpi-sub">{receivables.pendingCount} cobranças a vencer</div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="mom">
             <h3>Mês atual vs. anterior</h3>
             <div className="kpi-value">{formatBRL(mom.atual)}</div>
             <div className="kpi-sub">
@@ -212,33 +213,33 @@ export default async function DashboardPage({
                 </span>
               )}
             </div>
-          </div>
+          </ClickableCard>
         </div>
 
         {/* KPIs — conversão, ticket máximo, recorrência, base */}
         <div className="grid kpis" style={{ marginTop: 16 }}>
-          <div className="card">
+          <ClickableCard card="conversao">
             <h3>Taxa de conversão</h3>
             <div className="kpi-value green">{extra.conversao.toFixed(1)}%</div>
             <div className="kpi-sub">cobranças que viraram receita</div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="maior">
             <h3>Maior doação</h3>
             <div className="kpi-value green">{formatBRL(extra.maiorDoacao)}</div>
             <div className="kpi-sub">no período/filtros</div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="mrrinad">
             <h3>Inadimplência recorrente (MRR)</h3>
             <div className="kpi-value red">{formatBRL(overdueMrr.value)}</div>
             <div className="kpi-sub">
               {overdueMrr.count} recorrentes em atraso · valor mensal (sem acumulado)
             </div>
-          </div>
-          <div className="card">
+          </ClickableCard>
+          <ClickableCard card="doadoresbase">
             <h3>Doadores cadastrados</h3>
             <div className="kpi-value">{extra.totalDoadoresCadastrados}</div>
             <div className="kpi-sub">total na base</div>
-          </div>
+          </ClickableCard>
         </div>
 
         {/* Evolução mensal por projeto */}
