@@ -8,6 +8,7 @@ import {
   BILLING_OPTIONS,
   RECURRING_OPTIONS,
   PROJECT_OPTIONS,
+  ORIGIN_OPTIONS,
 } from "@/lib/filters";
 
 export function FiltersBar() {
@@ -121,6 +122,19 @@ export function FiltersBar() {
             onChange={(e) => update({ projeto: e.target.value || null })}
           >
             {PROJECT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Origem</label>
+          <select
+            value={params.get("origem") ?? ""}
+            onChange={(e) => update({ origem: e.target.value || null })}
+          >
+            {ORIGIN_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

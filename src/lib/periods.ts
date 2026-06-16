@@ -24,5 +24,6 @@ export interface PaymentFilters {
   paymentMethod?: string | null;
   recurring?: "recurring" | "oneoff" | null;
   project?: string | null;
+  origin?: "import" | "asaas" | null;
   q?: string | null;
 }

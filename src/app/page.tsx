@@ -108,6 +108,7 @@ export default async function DashboardPage({
     until: f.until,
     forma: f.billingType,
     projeto: f.project,
+    origem: f.origin,
   })}`;
 
   const totalPages = Math.max(1, Math.ceil(payments.total / pageSize));
@@ -120,6 +121,7 @@ export default async function DashboardPage({
     forma: f.billingType,
     rec: f.recurring,
     projeto: f.project,
+    origem: f.origin,
     q: f.q,
   };
   const pageUrl = (pg: number) => buildQuery({ ...filterParams, page: pg });

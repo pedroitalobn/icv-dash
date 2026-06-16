@@ -40,6 +40,12 @@ export const PROJECT_OPTIONS = [
   { value: "Deixai Vir a Mim", label: "Deixai Vir a Mim" },
 ];
 
+export const ORIGIN_OPTIONS = [
+  { value: "", label: "Todas as origens" },
+  { value: "asaas", label: "Conta Asaas (API)" },
+  { value: "import", label: "Importado (planilhas)" },
+];
+
 export interface ParsedFilters {
   period: Period;
   from: string;
@@ -48,6 +54,7 @@ export interface ParsedFilters {
   billingType: string; // payment_method
   recurring: string;
   project: string;
+  origin: string;
   q: string;
   since: Date | null;
   untilDate: Date | null;
@@ -75,6 +82,7 @@ export function parseFilters(query: Query): ParsedFilters {
   const billingType = str(query.forma);
   const recurring = str(query.rec);
   const project = str(query.projeto);
+  const origin = str(query.origem);
   const q = str(query.q);
 
   const hasRange = Boolean(parseDay(from) || parseDay(until));
@@ -101,6 +109,7 @@ export function parseFilters(query: Query): ParsedFilters {
     billingType,
     recurring,
     project,
+    origin,
     q,
     since,
     untilDate,
@@ -111,6 +120,7 @@ export function parseFilters(query: Query): ParsedFilters {
       paymentMethod: billingType || null,
       recurring: recurring === "recurring" || recurring === "oneoff" ? recurring : null,
       project: project || null,
+      origin: origin === "import" || origin === "asaas" ? origin : null,
       q: q || null,
     },
   };
@@ -125,6 +135,7 @@ export function buildQuery(
     forma: string;
     rec: string;
     projeto: string;
+    origem: string;
     q: string;
     page: number | string;
   }>
