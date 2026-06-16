@@ -618,6 +618,16 @@ export async function getLastSync() {
   return prisma.syncLog.findFirst({ orderBy: { startedAt: "desc" } });
 }
 
+/** Data da última importação (planilhas) e total de registros importados. */
+export async function getLastImport(): Promise<{ last: Date | null; count: number }> {
+  const [row] = await prisma.$queryRaw<{ last: Date | null; count: bigint }[]>(Prisma.sql`
+    SELECT MAX("imported_at") AS last,
+           COUNT(*) FILTER (WHERE "imported_at" IS NOT NULL)::bigint AS count
+    FROM "donations"
+  `);
+  return { last: row?.last ?? null, count: Number(row?.count ?? 0) };
+}
+
 // =============================== Análises extras =============================
 
 export interface StatusBreakdown {

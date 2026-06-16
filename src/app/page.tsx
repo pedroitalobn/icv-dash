@@ -33,6 +33,7 @@ import {
   getMonthlyByProject,
   getExtraKpis,
   getRevenueTrend,
+  getLastImport,
   listDonorsWithNRecurring,
   listDonations,
 } from "@/lib/queries";
@@ -82,6 +83,7 @@ export default async function DashboardPage({
     monthly,
     extra,
     revenueTrend,
+    lastImport,
   ] = await Promise.all([
     getSummary(paymentFilters),
     getTimeSeries(paymentFilters),
@@ -100,6 +102,7 @@ export default async function DashboardPage({
     getMonthlyByProject(paymentFilters),
     getExtraKpis(paymentFilters),
     getRevenueTrend(paymentFilters),
+    getLastImport(),
   ]);
 
   const recurringExportUrl = `/api/export/recurring-donors${buildQuery({
@@ -446,9 +449,13 @@ export default async function DashboardPage({
         </Collapsible>
 
         <p className="muted" style={{ marginTop: 20, fontSize: 12 }}>
+          {lastImport.last
+            ? `Última importação: ${new Date(lastImport.last).toLocaleString("pt-BR")} · ${lastImport.count} registros importados`
+            : "Nenhuma importação registrada."}
+          {" · "}
           {lastSync
-            ? `Última sincronização: ${formatDate(lastSync.finishedAt ?? lastSync.startedAt)} · status ${lastSync.status} · ${lastSync.donationsProcessed} doações`
-            : "Nenhuma sincronização executada ainda."}
+            ? `Última sincronização Asaas: ${formatDate(lastSync.finishedAt ?? lastSync.startedAt)} (${lastSync.status})`
+            : "sem sincronização Asaas"}
         </p>
       </main>
     </>
