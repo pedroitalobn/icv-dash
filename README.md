@@ -81,8 +81,12 @@ O repositório já traz `Dockerfile` e `docker-compose.yml` (serviços **app** +
 
 1. No Dokploy, crie um app do tipo **Compose** apontando para este repositório (branch `main`).
 2. Em **Environment**, defina todas as variáveis da tabela acima.
+   - ⚠️ **`DATABASE_URL`**: precisa terminar com **`?schema=icv_dash`** para o app
+     viver num schema isolado. Sem isso ele cai no `public` (que já tem outras tabelas)
+     e o deploy falha com `P3005 — schema is not empty`.
    - ⚠️ **`ASAAS_API_KEY`**: como a chave começa com `$`, escape como **`$$`** para o
      Compose não interpretar como variável. Ex.: `ASAAS_API_KEY=$$aact_prod_000...`
+   - A criação das tabelas usa **`prisma db push`** (idempotente, sem migrations).
 3. Em **Domains**, aponte o domínio para o serviço **app**, porta **3000**.
 4. O serviço `app` roda `prisma migrate deploy` + seed do admin no start; o serviço
    `cron` sincroniza com o Asaas a cada 15 min.

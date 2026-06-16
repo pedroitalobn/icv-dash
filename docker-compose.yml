@@ -1,5 +1,9 @@
 # Deploy no Dokploy (Compose). Defina as variáveis no painel de Environment do Dokploy.
-# IMPORTANTE: na ASAAS_API_KEY, escape o `$` inicial como `$$` (veja README/notas).
+#
+# IMPORTANTE (2 pontos que quebram o deploy se errados):
+#  1) DATABASE_URL DEVE terminar com  ?schema=icv_dash  para isolar o app das
+#     tabelas que já existem no schema `public` do banco `cruzdavida`.
+#  2) Na ASAAS_API_KEY, escape o `$` inicial como `$$` (senão o Compose zera o valor).
 
 x-env: &app-env
   DATABASE_URL: ${DATABASE_URL}
@@ -13,18 +17,30 @@ x-env: &app-env
   AUTH_SECRET: ${AUTH_SECRET}
 
 services:
-  # Aplicação web (dashboard + APIs). Roda a migration + seed e sobe o Next.
-  app:
+  # Inicialização: cria o schema `icv_dash` + tabelas (db push, idempotente) e o admin.
+  # Roda uma vez e encerra; app/cron só sobem após este terminar com sucesso.
+  migrate:
     build:
       context: .
       dockerfile: Dockerfile
     image: icv-dash:latest
-    restart: unless-stopped
+    restart: "no"
     environment: *app-env
     command: >
-      sh -c "npx prisma migrate deploy &&
-             npx tsx prisma/seed.ts &&
-             npm start"
+      sh -c "npx prisma db push --skip-generate --accept-data-loss &&
+             npx tsx prisma/seed.ts"
+    networks:
+      - dokploy-network
+
+  # Aplicação web (dashboard + APIs).
+  app:
+    image: icv-dash:latest
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app-env
+    command: npm start
     expose:
       - "3000"
     networks:
@@ -35,7 +51,8 @@ services:
     image: icv-dash:latest
     restart: unless-stopped
     depends_on:
-      - app
+      migrate:
+        condition: service_completed_successfully
     environment: *app-env
     command: >
       sh -c "while true; do
