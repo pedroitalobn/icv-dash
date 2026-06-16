@@ -6,7 +6,7 @@ import {
   PAID_STATUSES,
   formatBRL,
   formatDate,
-  maskName,
+  displayName,
   statusLabel,
   paymentMethodLabel,
 } from "./format";
@@ -654,9 +654,10 @@ const OWED = Prisma.sql`"status" NOT IN ('paid','confirmed','refunded','cancelle
 /** Retorna os dados por trás de um card específico, respeitando os filtros. */
 export async function getCardDetail(
   card: string,
-  f: PaymentFilters
+  f: PaymentFilters,
+  reveal = false
 ): Promise<CardDetail> {
-  const money: ("left" | "right")[] = [];
+  const nm = (n: string | null) => displayName(n, reveal);
 
   switch (card) {
     case "total":
@@ -695,7 +696,7 @@ export async function getCardDetail(
         subtitle: `${t.length} doadores`,
         columns: ["Doador", "Doações", "Total"],
         aligns: ["left", "right", "right"],
-        rows: t.map((d) => [maskName(d.name) || d.email || "—", String(d.quantidade), formatBRL(d.total)]),
+        rows: t.map((d) => [nm(d.name) || d.email || "—", String(d.quantidade), formatBRL(d.total)]),
       };
     }
 
@@ -706,7 +707,7 @@ export async function getCardDetail(
         subtitle: `${d.length} doadores`,
         columns: ["Doador", "Projeto", "Recorrências", "Total"],
         aligns: ["left", "left", "right", "right"],
-        rows: d.map((x) => [maskName(x.name) || "—", x.project ?? "—", `${x.recorrentes}x`, formatBRL(x.total)]),
+        rows: d.map((x) => [nm(x.name) || "—", x.project ?? "—", `${x.recorrentes}x`, formatBRL(x.total)]),
       };
     }
 
@@ -730,7 +731,7 @@ export async function getCardDetail(
         subtitle: `${rows.length} recorrentes`,
         columns: ["Doador", "Recorrências", "Total"],
         aligns: ["left", "right", "right"],
-        rows: rows.map((r) => [maskName(r.name) || "—", `${Number(r.qtd)}x`, formatBRL(r.total)]),
+        rows: rows.map((r) => [nm(r.name) || "—", `${Number(r.qtd)}x`, formatBRL(r.total)]),
       };
     }
 
@@ -757,7 +758,7 @@ export async function getCardDetail(
         subtitle: `${rows.length} cobranças`,
         columns: ["Doador", "Forma", "Vencimento", "Valor"],
         aligns: ["left", "left", "left", "right"],
-        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
+        rows: rows.map((r) => [nm(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
       };
     }
 
@@ -783,7 +784,7 @@ export async function getCardDetail(
         subtitle: `${rows.length} cobranças`,
         columns: ["Doador", "Forma", "Vencimento", "Valor"],
         aligns: ["left", "left", "left", "right"],
-        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
+        rows: rows.map((r) => [nm(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.due), formatBRL(r.amount)]),
       };
     }
 
@@ -810,7 +811,7 @@ export async function getCardDetail(
         title: "Maiores doações",
         columns: ["Doador", "Forma", "Data", "Valor"],
         aligns: ["left", "left", "left", "right"],
-        rows: rows.map((r) => [maskName(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.eff), formatBRL(r.amount)]),
+        rows: rows.map((r) => [nm(r.name) || "—", paymentMethodLabel(r.method), formatDate(r.eff), formatBRL(r.amount)]),
       };
     }
 

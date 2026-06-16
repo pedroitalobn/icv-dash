@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listDonorsWithNRecurring } from "@/lib/queries";
 import { parseFilters } from "@/lib/filters";
-import { titleCaseName } from "@/lib/format";
+import { displayName } from "@/lib/format";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
   const query = Object.fromEntries(req.nextUrl.searchParams.entries());
   const { paymentFilters } = parseFilters(query);
   const n = Number(query.n) || 3;
+
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "admin";
 
   const donors = await listDonorsWithNRecurring(n, paymentFilters);
 
@@ -31,10 +35,10 @@ export async function GET(req: NextRequest) {
   for (const d of donors) {
     lines.push(
       [
-        titleCaseName(d.name) || "",
-        d.email ?? "",
-        d.documentNumber ?? "",
-        d.mobilePhone ?? "",
+        displayName(d.name, isAdmin),
+        isAdmin ? d.email ?? "" : "",
+        isAdmin ? d.documentNumber ?? "" : "",
+        isAdmin ? d.mobilePhone ?? "" : "",
         d.project ?? "",
         String(d.recorrentes),
         d.total.toFixed(2).replace(".", ","),
