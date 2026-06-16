@@ -23,13 +23,13 @@ import {
   getLastSync,
   getRecurringMetrics,
   getReceivables,
-  getNewVsReturning,
   getMonthOverMonth,
   getTopDonors,
   getStatusBreakdown,
   getAmountBuckets,
   getMonthlyByProject,
   getExtraKpis,
+  listDonorsWithNRecurring,
   listDonations,
 } from "@/lib/queries";
 import { parseFilters, buildQuery } from "@/lib/filters";
@@ -69,7 +69,7 @@ export default async function DashboardPage({
     lastSync,
     recurring,
     receivables,
-    newVs,
+    recurringDonors,
     mom,
     topDonors,
     statusBreakdown,
@@ -85,7 +85,7 @@ export default async function DashboardPage({
     getLastSync(),
     getRecurringMetrics(paymentFilters),
     getReceivables(paymentFilters),
-    getNewVsReturning(paymentFilters),
+    listDonorsWithNRecurring(3, paymentFilters),
     getMonthOverMonth(paymentFilters),
     getTopDonors(paymentFilters, 10),
     getStatusBreakdown(paymentFilters),
@@ -93,6 +93,14 @@ export default async function DashboardPage({
     getMonthlyByProject(paymentFilters),
     getExtraKpis(paymentFilters),
   ]);
+
+  const recurringExportUrl = `/api/export/recurring-donors${buildQuery({
+    period: f.period === "custom" ? "" : f.period,
+    from: f.from,
+    until: f.until,
+    forma: f.billingType,
+    projeto: f.project,
+  })}`;
 
   const totalPages = Math.max(1, Math.ceil(payments.total / pageSize));
   // Preserva os filtros atuais ao paginar/exportar.
@@ -115,6 +123,12 @@ export default async function DashboardPage({
       <main className="container">
         {/* Filtros: período, intervalo de datas, status, forma, recorrência, busca */}
         <FiltersBar />
+
+        {/* Gráfico de arrecadação (acima dos cards) */}
+        <div className="section-title" style={{ marginTop: 8 }}>Arrecadação por dia</div>
+        <div className="card" style={{ marginBottom: 8 }}>
+          <RevenueChart data={series} />
+        </div>
 
         {/* KPIs */}
         <div className="grid kpis">
@@ -150,27 +164,18 @@ export default async function DashboardPage({
             </div>
           </div>
           <div className="card">
-            <h3>Inadimplência (vencidas)</h3>
+            <h3>Inadimplência (em aberto)</h3>
             <div className="kpi-value" style={{ color: "#b91c1c" }}>
               {formatBRL(receivables.overdueValue)}
             </div>
-            <div className="kpi-sub">{receivables.overdueCount} cobranças vencidas</div>
+            <div className="kpi-sub">
+              {receivables.overdueCount} vencidas (vencimento &lt; hoje)
+            </div>
           </div>
           <div className="card">
             <h3>A receber (pendentes)</h3>
             <div className="kpi-value">{formatBRL(receivables.pendingValue)}</div>
-            <div className="kpi-sub">{receivables.pendingCount} cobranças pendentes</div>
-          </div>
-          <div className="card">
-            <h3>Novos vs. recorrentes</h3>
-            <div className="kpi-value">
-              {newVs.novos}
-              <span className="muted" style={{ fontSize: 16, fontWeight: 600 }}>
-                {" "}
-                / {newVs.recorrentes}
-              </span>
-            </div>
-            <div className="kpi-sub">novos doadores / que retornaram</div>
+            <div className="kpi-sub">{receivables.pendingCount} cobranças a vencer</div>
           </div>
           <div className="card">
             <h3>Mês atual vs. anterior</h3>
@@ -210,12 +215,6 @@ export default async function DashboardPage({
             <div className="kpi-value">{extra.totalDoadoresCadastrados}</div>
             <div className="kpi-sub">total na base</div>
           </div>
-        </div>
-
-        {/* Gráfico de arrecadação */}
-        <div className="section-title">Arrecadação por dia</div>
-        <div className="card">
-          <RevenueChart data={series} />
         </div>
 
         {/* Evolução mensal por projeto */}
@@ -290,6 +289,59 @@ export default async function DashboardPage({
                   <td className="muted">{i + 1}</td>
                   <td>{maskName(d.name) || d.email || d.id}</td>
                   <td className="muted">{d.quantidade}x</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>
+                    {formatBRL(d.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Doadores com 3 cobranças recorrentes */}
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+        >
+          <div className="section-title">
+            Doadores com 3 cobranças recorrentes{" "}
+            <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>
+              ({recurringDonors.length})
+            </span>
+          </div>
+          <a
+            href={recurringExportUrl}
+            className="btn btn-ghost"
+            style={{ padding: "8px 14px", fontSize: 13 }}
+          >
+            ⬇ Exportar CSV
+          </a>
+        </div>
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>#</th>
+                <th>Doador</th>
+                <th>Projeto</th>
+                <th>Recorrências</th>
+                <th style={{ textAlign: "right" }}>Total doado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recurringDonors.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                    Nenhum doador com exatamente 3 cobranças recorrentes nos filtros atuais.
+                  </td>
+                </tr>
+              )}
+              {recurringDonors.map((d, i) => (
+                <tr key={d.id}>
+                  <td className="muted">{i + 1}</td>
+                  <td>{maskName(d.name) || d.email || d.id}</td>
+                  <td className="muted">{d.project ?? "—"}</td>
+                  <td className="muted">{d.recorrentes}x</td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
                     {formatBRL(d.total)}
                   </td>

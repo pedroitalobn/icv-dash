@@ -2,6 +2,7 @@
 import { periodToDate, type Period, type PaymentFilters } from "./periods";
 
 export const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: "today", label: "Hoje" },
   { key: "7d", label: "7 dias" },
   { key: "30d", label: "30 dias" },
   { key: "90d", label: "90 dias" },
@@ -83,7 +84,14 @@ export function parseFilters(query: Query): ParsedFilters {
     : ((PERIOD_OPTIONS.some((p) => p.key === periodRaw) ? periodRaw : "30d") as Period);
 
   const since = hasRange ? parseDay(from) : periodToDate(period);
-  const untilDate = hasRange ? parseDay(until, true) : null;
+  let untilDate = hasRange ? parseDay(until, true) : null;
+  // "Hoje": limita ao fim do dia (início de amanhã).
+  if (!hasRange && period === "today") {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    t.setDate(t.getDate() + 1);
+    untilDate = t;
+  }
 
   return {
     period,

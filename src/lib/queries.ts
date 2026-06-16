@@ -120,6 +120,62 @@ export async function getDonorsWithNRecurring(
   return Number(row?.count ?? 0);
 }
 
+export interface RecurringDonor {
+  id: string;
+  name: string | null;
+  email: string | null;
+  documentNumber: string | null;
+  mobilePhone: string | null;
+  project: string | null;
+  recorrentes: number;
+  total: number;
+}
+
+/** Lista os doadores com EXATAMENTE N doações recorrentes pagas (respeita projeto/forma). */
+export async function listDonorsWithNRecurring(
+  n: number,
+  f: PaymentFilters
+): Promise<RecurringDonor[]> {
+  const scope: Prisma.Sql[] = [];
+  if (f.project) scope.push(Prisma.sql`d."project" = ${f.project}`);
+  if (f.paymentMethod) scope.push(Prisma.sql`d."payment_method" = ${f.paymentMethod}`);
+  const scopeSql = scope.length ? Prisma.sql`AND ${Prisma.join(scope, " AND ")}` : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<
+    {
+      id: string;
+      name: string | null;
+      email: string | null;
+      document_number: string | null;
+      mobile_phone: string | null;
+      project: string | null;
+      recorrentes: bigint;
+      total: number;
+    }[]
+  >(Prisma.sql`
+    SELECT c."id", c."full_name" AS name, c."email",
+           c."document_number", c."mobile_phone", d."project",
+           COUNT(d.*)::bigint                    AS recorrentes,
+           COALESCE(SUM(d."amount"), 0)::float8  AS total
+    FROM "donations" d
+    JOIN "donors" c ON c."id" = d."donor_id"
+    WHERE d."is_recurring" = true AND d."status" = ANY(${PAID_STATUSES}) ${scopeSql}
+    GROUP BY c."id", c."full_name", c."email", c."document_number", c."mobile_phone", d."project"
+    HAVING COUNT(d.*) = ${n}
+    ORDER BY total DESC
+  `);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    documentNumber: r.document_number,
+    mobilePhone: r.mobile_phone,
+    project: r.project,
+    recorrentes: Number(r.recorrentes),
+    total: Number(r.total),
+  }));
+}
+
 export interface TimeSeriesPoint {
   dia: string;
   total: number;
@@ -298,11 +354,9 @@ export interface Receivables {
 }
 
 export async function getReceivables(f: PaymentFilters): Promise<Receivables> {
-  const dateFilter = dateAnd(
-    f.since,
-    f.until,
-    Prisma.sql`COALESCE("due_date", "created_at")`
-  );
+  // Posição ATUAL (não usa o corte de período): vencida = vencimento < hoje e
+  // ainda não quitada (independente do status literal); a receber = pendente
+  // com vencimento futuro/sem data.
   const [row] = await prisma.$queryRaw<
     {
       overdue_value: number;
@@ -312,12 +366,13 @@ export async function getReceivables(f: PaymentFilters): Promise<Receivables> {
     }[]
   >(Prisma.sql`
     SELECT
-      COALESCE(SUM("amount") FILTER (WHERE "status" = 'overdue'), 0)::float8 AS overdue_value,
-      COUNT(*) FILTER (WHERE "status" = 'overdue')::bigint                   AS overdue_count,
-      COALESCE(SUM("amount") FILTER (WHERE "status" = 'pending'), 0)::float8 AS pending_value,
-      COUNT(*) FILTER (WHERE "status" = 'pending')::bigint                   AS pending_count
+      COALESCE(SUM("amount") FILTER (WHERE "due_date" < CURRENT_DATE), 0)::float8 AS overdue_value,
+      COUNT(*) FILTER (WHERE "due_date" < CURRENT_DATE)::bigint                   AS overdue_count,
+      COALESCE(SUM("amount") FILTER (WHERE "due_date" >= CURRENT_DATE OR "due_date" IS NULL), 0)::float8 AS pending_value,
+      COUNT(*) FILTER (WHERE "due_date" >= CURRENT_DATE OR "due_date" IS NULL)::bigint AS pending_count
     FROM "donations"
-    WHERE TRUE ${dateFilter} ${pScope(f)} ${pRecur(f)}
+    WHERE "status" NOT IN ('paid', 'confirmed', 'refunded', 'cancelled', 'chargeback')
+      ${pScope(f)} ${pRecur(f)}
   `);
   return {
     overdueValue: Number(row?.overdue_value ?? 0),
