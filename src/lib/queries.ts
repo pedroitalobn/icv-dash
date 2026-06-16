@@ -31,11 +31,13 @@ function dateAnd(
 function pPaid(f: PaymentFilters): Prisma.Sql {
   return f.status ? Prisma.sql`("status" = ${f.status})` : PAID;
 }
-/** Projeto + forma de pagamento. */
+/** Projeto + forma de pagamento + origem (importado x conta Asaas). */
 function pScope(f: PaymentFilters): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
   if (f.project) parts.push(Prisma.sql`"project" = ${f.project}`);
   if (f.paymentMethod) parts.push(Prisma.sql`"payment_method" = ${f.paymentMethod}`);
+  if (f.origin === "import") parts.push(Prisma.sql`"imported_at" IS NOT NULL`);
+  if (f.origin === "asaas") parts.push(Prisma.sql`"imported_at" IS NULL`);
   if (parts.length === 0) return Prisma.empty;
   return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
 }
@@ -56,6 +58,8 @@ function donationsWhere(f: PaymentFilters): Prisma.Sql {
   if (f.status) conds.push(Prisma.sql`d."status" = ${f.status}`);
   if (f.paymentMethod) conds.push(Prisma.sql`d."payment_method" = ${f.paymentMethod}`);
   if (f.project) conds.push(Prisma.sql`d."project" = ${f.project}`);
+  if (f.origin === "import") conds.push(Prisma.sql`d."imported_at" IS NOT NULL`);
+  if (f.origin === "asaas") conds.push(Prisma.sql`d."imported_at" IS NULL`);
   if (f.recurring === "recurring") conds.push(Prisma.sql`d."is_recurring" = true`);
   if (f.recurring === "oneoff") conds.push(Prisma.sql`d."is_recurring" = false`);
   if (f.q) {
@@ -499,6 +503,8 @@ export async function getTopDonors(f: PaymentFilters, limit = 10): Promise<TopDo
   const scope: Prisma.Sql[] = [];
   if (f.project) scope.push(Prisma.sql`d."project" = ${f.project}`);
   if (f.paymentMethod) scope.push(Prisma.sql`d."payment_method" = ${f.paymentMethod}`);
+  if (f.origin === "import") scope.push(Prisma.sql`d."imported_at" IS NOT NULL`);
+  if (f.origin === "asaas") scope.push(Prisma.sql`d."imported_at" IS NULL`);
   if (f.recurring === "recurring") scope.push(Prisma.sql`d."is_recurring" = true`);
   if (f.recurring === "oneoff") scope.push(Prisma.sql`d."is_recurring" = false`);
   const scopeSql = scope.length ? Prisma.sql`AND ${Prisma.join(scope, " AND ")}` : Prisma.empty;
