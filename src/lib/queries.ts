@@ -558,6 +558,55 @@ export async function exportDonations(filters: PaymentFilters) {
   `);
 }
 
+export interface RevenueTrend {
+  spark: number[]; // arrecadação dos últimos 12 meses (mais antigo → atual)
+  cur: number; // últimos 12 meses
+  prev: number; // 12 meses anteriores (ano anterior)
+  yoyPct: number | null; // variação vs. ano anterior
+}
+
+/** Tendência de arrecadação (12 meses) + comparativo com o ano anterior. */
+export async function getRevenueTrend(f: PaymentFilters): Promise<RevenueTrend> {
+  const rows = await prisma.$queryRaw<{ total: number }[]>(Prisma.sql`
+    WITH months AS (
+      SELECT generate_series(
+        date_trunc('month', now()) - interval '11 months',
+        date_trunc('month', now()),
+        interval '1 month'
+      ) AS m
+    )
+    SELECT COALESCE(SUM(d."amount"), 0)::float8 AS total
+    FROM months
+    LEFT JOIN "donations" d
+      ON date_trunc('month', COALESCE(d."paid_at", d."confirmed_at", d."created_at")) = months.m
+     AND d."status" = ANY(${PAID_STATUSES}) ${pScope(f)} ${pRecur(f)}
+    GROUP BY months.m
+    ORDER BY months.m
+  `);
+  const spark = rows.map((r) => Number(r.total));
+
+  const [yoy] = await prisma.$queryRaw<{ cur: number; prev: number }[]>(Prisma.sql`
+    SELECT
+      COALESCE(SUM("amount") FILTER (
+        WHERE ${EFFECTIVE_DATE} >= now() - interval '12 months'
+      ), 0)::float8 AS cur,
+      COALESCE(SUM("amount") FILTER (
+        WHERE ${EFFECTIVE_DATE} >= now() - interval '24 months'
+          AND ${EFFECTIVE_DATE} <  now() - interval '12 months'
+      ), 0)::float8 AS prev
+    FROM "donations"
+    WHERE ${PAID} ${pScope(f)} ${pRecur(f)}
+  `);
+  const cur = Number(yoy?.cur ?? 0);
+  const prev = Number(yoy?.prev ?? 0);
+  return {
+    spark,
+    cur,
+    prev,
+    yoyPct: prev > 0 ? ((cur - prev) / prev) * 100 : null,
+  };
+}
+
 /** Última execução do cron de sincronização. */
 export async function getLastSync() {
   return prisma.syncLog.findFirst({ orderBy: { startedAt: "desc" } });
