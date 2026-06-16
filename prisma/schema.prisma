@@ -1,0 +1,108 @@
+// Prisma schema — icv-dash
+// Banco: PostgreSQL. As tabelas são alimentadas pelo cron job que consome a API do Asaas.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Usuário administrador do painel (controle de acesso).
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         String   @default("admin") // admin, viewer
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+/// Doador (cliente no Asaas).
+model Customer {
+  id            String   @id // id do cliente no Asaas (ex: cus_000...)
+  name          String?
+  email         String?
+  cpfCnpj       String?
+  mobilePhone   String?
+  dateCreated   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  payments      Payment[]
+  subscriptions Subscription[]
+
+  @@index([email])
+  @@map("customers")
+}
+
+/// Assinatura (cobrança recorrente no Asaas).
+model Subscription {
+  id           String    @id // id da assinatura no Asaas (ex: sub_000...)
+  customerId   String
+  status       String?   // ACTIVE, EXPIRED, INACTIVE
+  billingType  String?   // PIX, BOLETO, CREDIT_CARD, UNDEFINED
+  value        Decimal   @db.Decimal(12, 2)
+  cycle        String?   // MONTHLY, WEEKLY, YEARLY...
+  description  String?
+  nextDueDate  DateTime?
+  dateCreated  DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+/// Cobrança / doação individual no Asaas.
+model Payment {
+  id             String    @id // id da cobrança no Asaas (ex: pay_000...)
+  customerId     String
+  subscriptionId String?   // preenchido quando a cobrança veio de uma assinatura (recorrente)
+  value          Decimal   @db.Decimal(12, 2)
+  netValue       Decimal?  @db.Decimal(12, 2)
+  billingType    String    // PIX, BOLETO, CREDIT_CARD, UNDEFINED
+  status         String    // PENDING, RECEIVED, CONFIRMED, OVERDUE, REFUNDED...
+  description    String?
+  invoiceUrl     String?
+  dueDate        DateTime?
+  paymentDate    DateTime? // data em que o doador efetivamente pagou
+  confirmedDate  DateTime?
+  dateCreated    DateTime?
+  syncedAt       DateTime  @default(now())
+
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([billingType])
+  @@index([paymentDate])
+  @@index([dateCreated])
+  @@map("payments")
+}
+
+/// Registro de cada execução do cron de sincronização (auditoria/observabilidade).
+model SyncLog {
+  id                Int       @id @default(autoincrement())
+  startedAt         DateTime  @default(now())
+  finishedAt        DateTime?
+  status            String    @default("running") // running, success, error
+  paymentsProcessed Int       @default(0)
+  customersProcessed Int      @default(0)
+  subscriptionsProcessed Int  @default(0)
+  error             String?
+
+  @@map("sync_logs")
+}
