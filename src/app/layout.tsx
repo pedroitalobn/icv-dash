@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   description: "Dashboard de doações integrado à API de cobranças do Asaas.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#b21e2b",
+};
+
 export default function RootLayout({
   children,
 }: {

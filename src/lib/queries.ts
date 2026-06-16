@@ -269,6 +269,7 @@ export interface PaymentRow {
   customerEmail: string | null;
   isRecurring: boolean;
   project: string | null;
+  isImported: boolean;
 }
 
 export async function listDonations(opts: {
@@ -290,6 +291,7 @@ export async function listDonations(opts: {
       dateCreated: Date | null;
       isRecurring: boolean;
       project: string | null;
+      isImported: boolean;
       customerName: string | null;
       customerEmail: string | null;
     }[]
@@ -298,6 +300,7 @@ export async function listDonations(opts: {
            d."status", d."description",
            d."paid_at" AS "paymentDate", d."created_at" AS "dateCreated",
            d."is_recurring" AS "isRecurring", d."project",
+           (d."imported_at" IS NOT NULL) AS "isImported",
            c."full_name" AS "customerName", c."email" AS "customerEmail"
     FROM "donations" d
     JOIN "donors" c ON c."id" = d."donor_id"

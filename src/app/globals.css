@@ -511,3 +511,81 @@ label {
 .muted {
   color: var(--muted);
 }
+
+/* Cards que contêm tabelas */
+.table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* --------------------------------- Mobile ----------------------------------- */
+@media (max-width: 820px) {
+  .container {
+    padding: 18px 14px 48px;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .topbar .subtitle,
+  .topbar .user {
+    display: none;
+  }
+  .topbar nav {
+    order: 4;
+    width: 100%;
+    justify-content: center;
+  }
+  .section-title {
+    font-size: 19px;
+    margin: 28px 0 12px;
+  }
+  .grid {
+    gap: 12px;
+  }
+  .grid.kpis {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    padding: 18px 16px;
+  }
+  .kpi-value {
+    font-size: 26px;
+  }
+  .filters {
+    flex-wrap: wrap;
+  }
+  th,
+  td {
+    padding: 12px 12px;
+  }
+  /* tabelas rolam horizontalmente no celular */
+  .table-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-card table {
+    min-width: 620px;
+  }
+  .collapsible-head {
+    margin: 26px 0 12px;
+  }
+}
+
+@media (max-width: 460px) {
+  .grid.kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+  .kpi-value {
+    font-size: 22px;
+  }
+  .topbar .title {
+    font-size: 15px;
+  }
+  /* evita a barra de filtros fixa cobrir conteúdo em telas pequenas */
+  body.filters-pinned .filters-bar {
+    position: static;
+  }
+}
