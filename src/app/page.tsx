@@ -8,6 +8,7 @@ import { AmountBucketsChart } from "@/components/AmountBucketsChart";
 import { MonthlyProjectChart } from "@/components/MonthlyProjectChart";
 import { FiltersBar } from "@/components/FiltersBar";
 import { Collapsible } from "@/components/Collapsible";
+import { Sparkline } from "@/components/Sparkline";
 import { getCurrentUser } from "@/lib/session";
 import {
   paymentMethodLabel,
@@ -31,6 +32,7 @@ import {
   getAmountBuckets,
   getMonthlyByProject,
   getExtraKpis,
+  getRevenueTrend,
   listDonorsWithNRecurring,
   listDonations,
 } from "@/lib/queries";
@@ -79,6 +81,7 @@ export default async function DashboardPage({
     buckets,
     monthly,
     extra,
+    revenueTrend,
   ] = await Promise.all([
     getSummary(paymentFilters),
     getTimeSeries(paymentFilters),
@@ -96,6 +99,7 @@ export default async function DashboardPage({
     getAmountBuckets(paymentFilters),
     getMonthlyByProject(paymentFilters),
     getExtraKpis(paymentFilters),
+    getRevenueTrend(paymentFilters),
   ]);
 
   const recurringExportUrl = `/api/export/recurring-donors${buildQuery({
@@ -140,6 +144,17 @@ export default async function DashboardPage({
             <h3>Total arrecadado</h3>
             <div className="kpi-value green">{formatBRL(summary.totalArrecadado)}</div>
             <div className="kpi-sub">{summary.totalRecebidas} doações recebidas</div>
+            <Sparkline data={revenueTrend.spark} color="#1d9d54" id="spark-rev" />
+            <div className="kpi-sub">
+              {revenueTrend.yoyPct == null ? (
+                <span className="muted">12 meses · sem base do ano anterior</span>
+              ) : (
+                <span className={`trend ${revenueTrend.yoyPct >= 0 ? "up" : "down"}`}>
+                  {revenueTrend.yoyPct >= 0 ? "▲" : "▼"}{" "}
+                  {Math.abs(revenueTrend.yoyPct).toFixed(1)}% vs. ano anterior
+                </span>
+              )}
+            </div>
           </div>
           <div className="card">
             <h3>Doadores únicos</h3>
