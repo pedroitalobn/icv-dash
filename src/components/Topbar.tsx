@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoutButton } from "./LogoutButton";
+import { FullWidthToggle } from "./FullWidthToggle";
 
 export function Topbar({ email }: { email?: string }) {
   return (
@@ -16,6 +17,7 @@ export function Topbar({ email }: { email?: string }) {
         <Link href="/usuarios">Usuários</Link>
       </nav>
       {email && <span className="user">{email}</span>}
+      <FullWidthToggle />
       <LogoutButton />
     </div>
   );

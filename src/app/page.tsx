@@ -7,6 +7,7 @@ import { StatusChart } from "@/components/StatusChart";
 import { AmountBucketsChart } from "@/components/AmountBucketsChart";
 import { MonthlyProjectChart } from "@/components/MonthlyProjectChart";
 import { FiltersBar } from "@/components/FiltersBar";
+import { Collapsible } from "@/components/Collapsible";
 import { getCurrentUser } from "@/lib/session";
 import {
   paymentMethodLabel,
@@ -265,7 +266,7 @@ export default async function DashboardPage({
         </div>
 
         {/* Top doadores */}
-        <div className="section-title">Top doadores</div>
+        <Collapsible title="Top doadores">
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table>
             <thead>
@@ -297,26 +298,22 @@ export default async function DashboardPage({
             </tbody>
           </table>
         </div>
+        </Collapsible>
 
         {/* Doadores com 3 cobranças recorrentes */}
-        <div
-          className="row"
-          style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+        <Collapsible
+          title="Doadores com 3 cobranças recorrentes"
+          count={recurringDonors.length}
+          action={
+            <a
+              href={recurringExportUrl}
+              className="btn btn-ghost"
+              style={{ padding: "8px 14px", fontSize: 13 }}
+            >
+              ⬇ Exportar CSV
+            </a>
+          }
         >
-          <div className="section-title">
-            Doadores com 3 cobranças recorrentes{" "}
-            <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>
-              ({recurringDonors.length})
-            </span>
-          </div>
-          <a
-            href={recurringExportUrl}
-            className="btn btn-ghost"
-            style={{ padding: "8px 14px", fontSize: 13 }}
-          >
-            ⬇ Exportar CSV
-          </a>
-        </div>
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table>
             <thead>
@@ -350,21 +347,22 @@ export default async function DashboardPage({
             </tbody>
           </table>
         </div>
+        </Collapsible>
 
         {/* Lista de transações */}
-        <div
-          className="row"
-          style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+        <Collapsible
+          title="Doações / transações"
+          count={payments.total}
+          action={
+            <a
+              href={exportUrl}
+              className="btn btn-ghost"
+              style={{ padding: "8px 14px", fontSize: 13 }}
+            >
+              ⬇ Exportar CSV
+            </a>
+          }
         >
-          <div className="section-title">Doações / transações</div>
-          <a
-            href={exportUrl}
-            className="btn btn-ghost"
-            style={{ padding: "8px 14px", fontSize: 13 }}
-          >
-            ⬇ Exportar CSV
-          </a>
-        </div>
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table>
             <thead>
@@ -425,6 +423,7 @@ export default async function DashboardPage({
             Próxima →
           </Link>
         </div>
+        </Collapsible>
 
         <p className="muted" style={{ marginTop: 20, fontSize: 12 }}>
           {lastSync

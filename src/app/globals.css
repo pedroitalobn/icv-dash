@@ -122,6 +122,49 @@ a {
   max-width: 1200px;
   margin: 0 auto;
   padding: 28px 24px 64px;
+  transition: max-width 0.2s ease;
+}
+/* Largura total (toggle na topbar) */
+body.wide .container {
+  max-width: 100%;
+}
+
+/* ------------------------- Seções expansíveis ------------------------------- */
+.collapsible-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 40px 0 16px;
+}
+.collapsible-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.collapsible-toggle:hover,
+.collapsible-toggle:active {
+  filter: none;
+  transform: none;
+  background: transparent;
+}
+.collapsible-head .section-title {
+  margin: 0;
+}
+.chev {
+  display: inline-block;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.chev.open {
+  transform: rotate(90deg);
 }
 
 /* ---------------------------------- Cards ----------------------------------- */
