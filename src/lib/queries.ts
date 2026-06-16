@@ -403,7 +403,8 @@ export async function getOverdueMrr(f: PaymentFilters): Promise<OverdueMrr> {
       WHERE "is_recurring" = true
         AND "due_date" < CURRENT_DATE
         AND "status" NOT IN ('paid', 'confirmed', 'refunded', 'cancelled', 'chargeback')
-        ${pScope(f)}
+        ${dateAnd(f.since, f.until, Prisma.sql`"due_date"`)}
+        ${pScope(f)} ${pRecur(f)}
       GROUP BY "donor_id"
     ) t
   `);
