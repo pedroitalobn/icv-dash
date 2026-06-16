@@ -290,7 +290,7 @@ export default async function DashboardPage({
 
         {/* Top doadores */}
         <Collapsible title="Top doadores">
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="card table-card">
           <table>
             <thead>
               <tr>
@@ -337,7 +337,7 @@ export default async function DashboardPage({
             </a>
           }
         >
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="card table-card">
           <table>
             <thead>
               <tr>
@@ -386,12 +386,13 @@ export default async function DashboardPage({
             </a>
           }
         >
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="card table-card">
           <table>
             <thead>
               <tr>
                 <th>Doador</th>
                 <th>Projeto</th>
+                <th>Origem</th>
                 <th>Forma</th>
                 <th>Status</th>
                 <th>Data</th>
@@ -401,7 +402,7 @@ export default async function DashboardPage({
             <tbody>
               {payments.rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="muted" style={{ textAlign: "center", padding: 30 }}>
+                  <td colSpan={7} className="muted" style={{ textAlign: "center", padding: 30 }}>
                     Nenhuma doação encontrada para os filtros.
                   </td>
                 </tr>
@@ -413,6 +414,11 @@ export default async function DashboardPage({
                     {p.isRecurring && <span className="tag-recurring">recorrente</span>}
                   </td>
                   <td className="muted">{p.project ?? "—"}</td>
+                  <td>
+                    <span className={`badge ${p.isImported ? "gray" : "green"}`}>
+                      {p.isImported ? "Importado" : "Asaas"}
+                    </span>
+                  </td>
                   <td>{paymentMethodLabel(p.billingType)}</td>
                   <td>{statusBadge(p.status)}</td>
                   <td>{formatDate(p.paymentDate ?? p.dateCreated)}</td>
@@ -456,6 +462,9 @@ export default async function DashboardPage({
           {lastSync
             ? `Última sincronização Asaas: ${formatDate(lastSync.finishedAt ?? lastSync.startedAt)} (${lastSync.status})`
             : "sem sincronização Asaas"}
+          {process.env.BUILD_TIME
+            ? ` · build ${new Date(process.env.BUILD_TIME).toLocaleString("pt-BR")}`
+            : ""}
         </p>
       </main>
     </>
