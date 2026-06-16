@@ -25,6 +25,27 @@ function dateAnd(
   return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
 }
 
+// --- Condições de filtro (colunas não-qualificadas; tabela única "donations") ---
+
+/** Status: usa o filtro escolhido; senão, considera recebidas/confirmadas. */
+function pPaid(f: PaymentFilters): Prisma.Sql {
+  return f.status ? Prisma.sql`("status" = ${f.status})` : PAID;
+}
+/** Projeto + forma de pagamento. */
+function pScope(f: PaymentFilters): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (f.project) parts.push(Prisma.sql`"project" = ${f.project}`);
+  if (f.paymentMethod) parts.push(Prisma.sql`"payment_method" = ${f.paymentMethod}`);
+  if (parts.length === 0) return Prisma.empty;
+  return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
+}
+/** Recorrência. */
+function pRecur(f: PaymentFilters): Prisma.Sql {
+  if (f.recurring === "recurring") return Prisma.sql`AND "is_recurring" = true`;
+  if (f.recurring === "oneoff") return Prisma.sql`AND "is_recurring" = false`;
+  return Prisma.empty;
+}
+
 // --------------------------- Filtros da lista/export -------------------------
 
 /** WHERE da listagem de doações (aliases d. = donations, c. = donors). */
@@ -56,10 +77,7 @@ export interface DashboardSummary {
   doadoresComTresRecorrentes: number;
 }
 
-export async function getSummary(
-  since: Date | null,
-  until: Date | null = null
-): Promise<DashboardSummary> {
+export async function getSummary(f: PaymentFilters): Promise<DashboardSummary> {
   const [agg] = await prisma.$queryRaw<
     { total: number; recebidas: bigint; doadores: bigint }[]
   >(Prisma.sql`
@@ -68,7 +86,7 @@ export async function getSummary(
       COUNT(*)::bigint                      AS recebidas,
       COUNT(DISTINCT "donor_id")::bigint    AS doadores
     FROM "donations"
-    WHERE ${PAID} ${dateAnd(since, until)}
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
   `);
 
   const totalArrecadado = Number(agg?.total ?? 0);
@@ -80,17 +98,21 @@ export async function getSummary(
     totalRecebidas,
     totalDoadores,
     ticketMedio: totalRecebidas > 0 ? totalArrecadado / totalRecebidas : 0,
-    doadoresComTresRecorrentes: await getDonorsWithNRecurring(3),
+    doadoresComTresRecorrentes: await getDonorsWithNRecurring(3, f),
   };
 }
 
-/** Doadores com EXATAMENTE N doações recorrentes pagas. */
-export async function getDonorsWithNRecurring(n: number): Promise<number> {
+/** Doadores com EXATAMENTE N doações recorrentes pagas (respeita projeto/forma). */
+export async function getDonorsWithNRecurring(
+  n: number,
+  f?: PaymentFilters
+): Promise<number> {
+  const scope = f ? pScope(f) : Prisma.empty;
   const [row] = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
     SELECT COUNT(*)::bigint AS count FROM (
       SELECT "donor_id"
       FROM "donations"
-      WHERE "is_recurring" = true AND ${PAID}
+      WHERE "is_recurring" = true AND ${PAID} ${scope}
       GROUP BY "donor_id"
       HAVING COUNT(*) = ${n}
     ) t
@@ -103,15 +125,12 @@ export interface TimeSeriesPoint {
   total: number;
 }
 
-export async function getTimeSeries(
-  since: Date | null,
-  until: Date | null = null
-): Promise<TimeSeriesPoint[]> {
+export async function getTimeSeries(f: PaymentFilters): Promise<TimeSeriesPoint[]> {
   const rows = await prisma.$queryRaw<{ dia: Date; total: number }[]>(Prisma.sql`
     SELECT date_trunc('day', ${EFFECTIVE_DATE}) AS dia,
            COALESCE(SUM("amount"), 0)::float8   AS total
     FROM "donations"
-    WHERE ${PAID} ${dateAnd(since, until)}
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
     GROUP BY 1
     ORDER BY 1 ASC
   `);
@@ -127,10 +146,8 @@ export interface BillingBreakdown {
   quantidade: number;
 }
 
-/** Arrecadação por forma de pagamento. */
 export async function getPaymentMethodBreakdown(
-  since: Date | null,
-  until: Date | null = null
+  f: PaymentFilters
 ): Promise<BillingBreakdown[]> {
   const rows = await prisma.$queryRaw<
     { payment_method: string; total: number; quantidade: bigint }[]
@@ -139,7 +156,7 @@ export async function getPaymentMethodBreakdown(
            COALESCE(SUM("amount"), 0)::float8 AS total,
            COUNT(*)::bigint                    AS quantidade
     FROM "donations"
-    WHERE ${PAID} ${dateAnd(since, until)}
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
     GROUP BY "payment_method"
     ORDER BY total DESC
   `);
@@ -157,10 +174,8 @@ export interface ProjectBreakdown {
   doadores: number;
 }
 
-/** Arrecadação por projeto (Cruz da Vida / Deixai Vir a Mim). */
 export async function getProjectBreakdown(
-  since: Date | null,
-  until: Date | null = null
+  f: PaymentFilters
 ): Promise<ProjectBreakdown[]> {
   const rows = await prisma.$queryRaw<
     { project: string | null; total: number; quantidade: bigint; doadores: bigint }[]
@@ -170,7 +185,7 @@ export async function getProjectBreakdown(
            COUNT(*)::bigint                          AS quantidade,
            COUNT(DISTINCT "donor_id")::bigint        AS doadores
     FROM "donations"
-    WHERE ${PAID} ${dateAnd(since, until)}
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
     GROUP BY "project"
     ORDER BY total DESC
   `);
@@ -244,12 +259,12 @@ export async function listDonations(opts: {
 // ----------------------- Métricas de recorrência -----------------------------
 
 export interface RecurringMetrics {
-  mrr: number; // receita recorrente recebida no mês corrente
-  activeSubs: number; // doadores recorrentes ativos (com doação recorrente nos últimos 60 dias)
-  canceledSubs: number; // recorrentes inativos (sem doação recorrente nos últimos 60 dias)
+  mrr: number;
+  activeSubs: number;
+  canceledSubs: number;
 }
 
-export async function getRecurringMetrics(): Promise<RecurringMetrics> {
+export async function getRecurringMetrics(f: PaymentFilters): Promise<RecurringMetrics> {
   const [row] = await prisma.$queryRaw<
     { mrr: number; ativos: bigint; total_rec: bigint }[]
   >(Prisma.sql`
@@ -262,7 +277,7 @@ export async function getRecurringMetrics(): Promise<RecurringMetrics> {
       )::bigint AS ativos,
       COUNT(DISTINCT "donor_id")::bigint AS total_rec
     FROM "donations"
-    WHERE "is_recurring" = true
+    WHERE "is_recurring" = true ${pScope(f)}
   `);
   const ativos = Number(row?.ativos ?? 0);
   const totalRec = Number(row?.total_rec ?? 0);
@@ -282,13 +297,10 @@ export interface Receivables {
   pendingCount: number;
 }
 
-export async function getReceivables(
-  since: Date | null,
-  until: Date | null = null
-): Promise<Receivables> {
+export async function getReceivables(f: PaymentFilters): Promise<Receivables> {
   const dateFilter = dateAnd(
-    since,
-    until,
+    f.since,
+    f.until,
     Prisma.sql`COALESCE("due_date", "created_at")`
   );
   const [row] = await prisma.$queryRaw<
@@ -305,7 +317,7 @@ export async function getReceivables(
       COALESCE(SUM("amount") FILTER (WHERE "status" = 'pending'), 0)::float8 AS pending_value,
       COUNT(*) FILTER (WHERE "status" = 'pending')::bigint                   AS pending_count
     FROM "donations"
-    WHERE TRUE ${dateFilter}
+    WHERE TRUE ${dateFilter} ${pScope(f)} ${pRecur(f)}
   `);
   return {
     overdueValue: Number(row?.overdue_value ?? 0),
@@ -322,29 +334,26 @@ export interface NewVsReturning {
   recorrentes: number;
 }
 
-export async function getNewVsReturning(
-  since: Date | null,
-  until: Date | null = null
-): Promise<NewVsReturning> {
-  if (!since) {
+export async function getNewVsReturning(f: PaymentFilters): Promise<NewVsReturning> {
+  if (!f.since) {
     const [r] = await prisma.$queryRaw<{ novos: bigint }[]>(Prisma.sql`
       SELECT COUNT(DISTINCT "donor_id")::bigint AS novos
-      FROM "donations" WHERE ${PAID} ${dateAnd(null, until)}
+      FROM "donations" WHERE ${pPaid(f)} ${dateAnd(null, f.until)} ${pScope(f)} ${pRecur(f)}
     `);
     return { novos: Number(r?.novos ?? 0), recorrentes: 0 };
   }
-  const upper = until ? Prisma.sql`AND ${EFFECTIVE_DATE} < ${until}` : Prisma.empty;
+  const upper = f.until ? Prisma.sql`AND ${EFFECTIVE_DATE} < ${f.until}` : Prisma.empty;
   const [row] = await prisma.$queryRaw<{ novos: bigint; recorrentes: bigint }[]>(
     Prisma.sql`
       WITH inperiod AS (
         SELECT DISTINCT "donor_id" AS cid
         FROM "donations"
-        WHERE ${PAID} AND ${EFFECTIVE_DATE} >= ${since} ${upper}
+        WHERE ${pPaid(f)} AND ${EFFECTIVE_DATE} >= ${f.since} ${upper} ${pScope(f)} ${pRecur(f)}
       ),
       prior AS (
         SELECT DISTINCT "donor_id" AS cid
         FROM "donations"
-        WHERE ${PAID} AND ${EFFECTIVE_DATE} < ${since}
+        WHERE ${pPaid(f)} AND ${EFFECTIVE_DATE} < ${f.since} ${pScope(f)} ${pRecur(f)}
       )
       SELECT
         COUNT(*) FILTER (WHERE p.cid IS NULL)::bigint     AS novos,
@@ -365,7 +374,7 @@ export interface MonthOverMonth {
   variacaoPct: number | null;
 }
 
-export async function getMonthOverMonth(): Promise<MonthOverMonth> {
+export async function getMonthOverMonth(f: PaymentFilters): Promise<MonthOverMonth> {
   const [row] = await prisma.$queryRaw<{ atual: number; anterior: number }[]>(
     Prisma.sql`
       SELECT
@@ -377,7 +386,7 @@ export async function getMonthOverMonth(): Promise<MonthOverMonth> {
             AND ${EFFECTIVE_DATE} <  date_trunc('month', now())
         ), 0)::float8 AS anterior
       FROM "donations"
-      WHERE ${PAID}
+      WHERE ${PAID} ${pScope(f)} ${pRecur(f)}
     `
   );
   const atual = Number(row?.atual ?? 0);
@@ -399,11 +408,17 @@ export interface TopDonor {
   quantidade: number;
 }
 
-export async function getTopDonors(
-  since: Date | null,
-  until: Date | null = null,
-  limit = 10
-): Promise<TopDonor[]> {
+export async function getTopDonors(f: PaymentFilters, limit = 10): Promise<TopDonor[]> {
+  const paid = f.status
+    ? Prisma.sql`d."status" = ${f.status}`
+    : Prisma.sql`d."status" = ANY(${PAID_STATUSES})`;
+  const scope: Prisma.Sql[] = [];
+  if (f.project) scope.push(Prisma.sql`d."project" = ${f.project}`);
+  if (f.paymentMethod) scope.push(Prisma.sql`d."payment_method" = ${f.paymentMethod}`);
+  if (f.recurring === "recurring") scope.push(Prisma.sql`d."is_recurring" = true`);
+  if (f.recurring === "oneoff") scope.push(Prisma.sql`d."is_recurring" = false`);
+  const scopeSql = scope.length ? Prisma.sql`AND ${Prisma.join(scope, " AND ")}` : Prisma.empty;
+
   const rows = await prisma.$queryRaw<
     { id: string; name: string | null; email: string | null; total: number; quantidade: bigint }[]
   >(Prisma.sql`
@@ -412,7 +427,7 @@ export async function getTopDonors(
            COUNT(*)::bigint                      AS quantidade
     FROM "donations" d
     JOIN "donors" c ON c."id" = d."donor_id"
-    WHERE ${PAID} ${dateAnd(since, until, Prisma.sql`COALESCE(d."paid_at", d."confirmed_at", d."created_at")`)}
+    WHERE ${paid} ${dateAnd(f.since, f.until, Prisma.sql`COALESCE(d."paid_at", d."confirmed_at", d."created_at")`)} ${scopeSql}
     GROUP BY c."id", c."full_name", c."email"
     ORDER BY total DESC
     LIMIT ${limit}
@@ -462,4 +477,139 @@ export async function exportDonations(filters: PaymentFilters) {
 /** Última execução do cron de sincronização. */
 export async function getLastSync() {
   return prisma.syncLog.findFirst({ orderBy: { startedAt: "desc" } });
+}
+
+// =============================== Análises extras =============================
+
+export interface StatusBreakdown {
+  status: string;
+  total: number;
+  quantidade: number;
+}
+
+/** Distribuição das doações por status (mostra todos; ignora o filtro de status). */
+export async function getStatusBreakdown(f: PaymentFilters): Promise<StatusBreakdown[]> {
+  const rows = await prisma.$queryRaw<
+    { status: string; total: number; quantidade: bigint }[]
+  >(Prisma.sql`
+    SELECT "status",
+           COALESCE(SUM("amount"), 0)::float8 AS total,
+           COUNT(*)::bigint                    AS quantidade
+    FROM "donations"
+    WHERE TRUE ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
+    GROUP BY "status"
+    ORDER BY total DESC
+  `);
+  return rows.map((r) => ({
+    status: r.status,
+    total: Number(r.total),
+    quantidade: Number(r.quantidade),
+  }));
+}
+
+export interface AmountBucket {
+  faixa: string;
+  total: number;
+  quantidade: number;
+}
+
+export async function getAmountBuckets(f: PaymentFilters): Promise<AmountBucket[]> {
+  const rows = await prisma.$queryRaw<
+    { faixa: string; ordem: number; total: number; quantidade: bigint }[]
+  >(Prisma.sql`
+    SELECT
+      CASE
+        WHEN "amount" < 50  THEN 'Até R$ 50'
+        WHEN "amount" < 100 THEN 'R$ 50–100'
+        WHEN "amount" < 250 THEN 'R$ 100–250'
+        WHEN "amount" < 500 THEN 'R$ 250–500'
+        ELSE 'R$ 500+'
+      END AS faixa,
+      CASE
+        WHEN "amount" < 50 THEN 1 WHEN "amount" < 100 THEN 2
+        WHEN "amount" < 250 THEN 3 WHEN "amount" < 500 THEN 4 ELSE 5
+      END AS ordem,
+      COALESCE(SUM("amount"), 0)::float8 AS total,
+      COUNT(*)::bigint                    AS quantidade
+    FROM "donations"
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
+    GROUP BY 1, 2
+    ORDER BY 2
+  `);
+  return rows.map((r) => ({
+    faixa: r.faixa,
+    total: Number(r.total),
+    quantidade: Number(r.quantidade),
+  }));
+}
+
+export interface MonthlyByProject {
+  data: Array<Record<string, string | number>>;
+  projects: string[];
+}
+
+export async function getMonthlyByProject(f: PaymentFilters): Promise<MonthlyByProject> {
+  const rows = await prisma.$queryRaw<
+    { mes: string; project: string; total: number }[]
+  >(Prisma.sql`
+    SELECT to_char(date_trunc('month', ${EFFECTIVE_DATE}), 'YYYY-MM') AS mes,
+           COALESCE("project", 'Não classificado')                     AS project,
+           COALESCE(SUM("amount"), 0)::float8                          AS total
+    FROM "donations"
+    WHERE ${pPaid(f)} ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
+    GROUP BY 1, 2
+    ORDER BY 1 ASC
+  `);
+
+  const projects = Array.from(new Set(rows.map((r) => r.project)));
+  const byMonth = new Map<string, Record<string, string | number>>();
+  for (const r of rows) {
+    const row = byMonth.get(r.mes) ?? { mes: r.mes };
+    row[r.project] = Number(r.total);
+    byMonth.set(r.mes, row);
+  }
+  const data = Array.from(byMonth.values()).map((row) => {
+    for (const p of projects) if (row[p] === undefined) row[p] = 0;
+    return row;
+  });
+  return { data, projects };
+}
+
+export interface ExtraKpis {
+  conversao: number;
+  maiorDoacao: number;
+  recorrenteShare: number;
+  totalDoadoresCadastrados: number;
+}
+
+export async function getExtraKpis(f: PaymentFilters): Promise<ExtraKpis> {
+  const [row] = await prisma.$queryRaw<
+    {
+      paid_count: bigint;
+      total_count: bigint;
+      max_amount: number;
+      rec_amount: number;
+      paid_amount: number;
+    }[]
+  >(Prisma.sql`
+    SELECT
+      COUNT(*) FILTER (WHERE ${PAID})::bigint                              AS paid_count,
+      COUNT(*)::bigint                                                     AS total_count,
+      COALESCE(MAX("amount") FILTER (WHERE ${PAID}), 0)::float8            AS max_amount,
+      COALESCE(SUM("amount") FILTER (WHERE ${PAID} AND "is_recurring"), 0)::float8 AS rec_amount,
+      COALESCE(SUM("amount") FILTER (WHERE ${PAID}), 0)::float8            AS paid_amount
+    FROM "donations"
+    WHERE TRUE ${dateAnd(f.since, f.until)} ${pScope(f)} ${pRecur(f)}
+  `);
+  const paidCount = Number(row?.paid_count ?? 0);
+  const totalCount = Number(row?.total_count ?? 0);
+  const paidAmount = Number(row?.paid_amount ?? 0);
+  const recAmount = Number(row?.rec_amount ?? 0);
+  const totalDoadoresCadastrados = await prisma.donor.count();
+  return {
+    conversao: totalCount > 0 ? (paidCount / totalCount) * 100 : 0,
+    maiorDoacao: Number(row?.max_amount ?? 0),
+    recorrenteShare: paidAmount > 0 ? (recAmount / paidAmount) * 100 : 0,
+    totalDoadoresCadastrados,
+  };
 }

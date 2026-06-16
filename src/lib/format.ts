@@ -51,15 +51,30 @@ export function statusLabel(status: string | null | undefined): string {
 // Status que contam como "valor efetivamente arrecadado".
 export const PAID_STATUSES = ["paid", "confirmed"];
 
+// Conectores que ficam em minúsculo no meio do nome.
+const NAME_LOWER = new Set(["de", "do", "da", "dos", "das", "e", "di", "du", "del"]);
+
+/** Title Case pt-BR: "MARIA DO CARMO" → "Maria do Carmo"; "c c b" → "C C B". */
+export function titleCaseName(full: string | null | undefined): string {
+  const t = (full ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!t) return "";
+  return t
+    .split(" ")
+    .map((w, i) =>
+      i > 0 && NAME_LOWER.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)
+    )
+    .join(" ");
+}
+
 /**
- * Exibe apenas o primeiro nome do doador, mascarando os demais com `*`
- * (privacidade). Ex.: "Maria do Carmo Moreira" → "Maria ** ***** *******".
+ * Exibe apenas o PRIMEIRO nome (em Title Case), mascarando os demais com `*`.
+ * Ex.: "MARIA DO CARMO MOREIRA" → "Maria ** ***** *******".
  */
 export function maskName(full: string | null | undefined): string {
   const name = (full ?? "").trim().replace(/\s+/g, " ");
   if (!name) return "";
   const parts = name.split(" ");
-  const first = parts[0];
+  const first = titleCaseName(parts[0]);
   if (parts.length === 1) return first;
   const rest = parts
     .slice(1)

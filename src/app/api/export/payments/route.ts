@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exportDonations } from "@/lib/queries";
 import { parseFilters } from "@/lib/filters";
-import { paymentMethodLabel, statusLabel } from "@/lib/format";
+import { paymentMethodLabel, statusLabel, titleCaseName } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     lines.push(
       [
         p.id,
-        p.customerName ?? "",
+        titleCaseName(p.customerName) || "",
         p.customerEmail ?? "",
         p.documentNumber ?? "",
         p.project ?? "",

@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { RevenueChart } from "@/components/RevenueChart";
 import { BillingChart } from "@/components/BillingChart";
+import { StatusChart } from "@/components/StatusChart";
+import { AmountBucketsChart } from "@/components/AmountBucketsChart";
+import { MonthlyProjectChart } from "@/components/MonthlyProjectChart";
 import { FiltersBar } from "@/components/FiltersBar";
 import { getCurrentUser } from "@/lib/session";
 import {
@@ -23,6 +26,10 @@ import {
   getNewVsReturning,
   getMonthOverMonth,
   getTopDonors,
+  getStatusBreakdown,
+  getAmountBuckets,
+  getMonthlyByProject,
+  getExtraKpis,
   listDonations,
 } from "@/lib/queries";
 import { parseFilters, buildQuery } from "@/lib/filters";
@@ -49,7 +56,7 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
 
   const f = parseFilters(searchParams);
-  const { since, untilDate, paymentFilters } = f;
+  const { paymentFilters } = f;
   const page = Math.max(1, Number(searchParams.page ?? "1") || 1);
   const pageSize = 15;
 
@@ -65,18 +72,26 @@ export default async function DashboardPage({
     newVs,
     mom,
     topDonors,
+    statusBreakdown,
+    buckets,
+    monthly,
+    extra,
   ] = await Promise.all([
-    getSummary(since, untilDate),
-    getTimeSeries(since, untilDate),
-    getPaymentMethodBreakdown(since, untilDate),
-    getProjectBreakdown(since, untilDate),
+    getSummary(paymentFilters),
+    getTimeSeries(paymentFilters),
+    getPaymentMethodBreakdown(paymentFilters),
+    getProjectBreakdown(paymentFilters),
     listDonations({ page, pageSize, filters: paymentFilters }),
     getLastSync(),
-    getRecurringMetrics(),
-    getReceivables(since, untilDate),
-    getNewVsReturning(since, untilDate),
-    getMonthOverMonth(),
-    getTopDonors(since, untilDate, 10),
+    getRecurringMetrics(paymentFilters),
+    getReceivables(paymentFilters),
+    getNewVsReturning(paymentFilters),
+    getMonthOverMonth(paymentFilters),
+    getTopDonors(paymentFilters, 10),
+    getStatusBreakdown(paymentFilters),
+    getAmountBuckets(paymentFilters),
+    getMonthlyByProject(paymentFilters),
+    getExtraKpis(paymentFilters),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(payments.total / pageSize));
@@ -173,16 +188,62 @@ export default async function DashboardPage({
           </div>
         </div>
 
+        {/* KPIs — conversão, ticket máximo, recorrência, base */}
+        <div className="grid kpis" style={{ marginTop: 16 }}>
+          <div className="card">
+            <h3>Taxa de conversão</h3>
+            <div className="kpi-value">{extra.conversao.toFixed(1)}%</div>
+            <div className="kpi-sub">cobranças que viraram receita</div>
+          </div>
+          <div className="card">
+            <h3>Maior doação</h3>
+            <div className="kpi-value brand">{formatBRL(extra.maiorDoacao)}</div>
+            <div className="kpi-sub">no período/filtros</div>
+          </div>
+          <div className="card">
+            <h3>% recorrente</h3>
+            <div className="kpi-value">{extra.recorrenteShare.toFixed(1)}%</div>
+            <div className="kpi-sub">da arrecadação vem de recorrentes</div>
+          </div>
+          <div className="card">
+            <h3>Doadores cadastrados</h3>
+            <div className="kpi-value">{extra.totalDoadoresCadastrados}</div>
+            <div className="kpi-sub">total na base</div>
+          </div>
+        </div>
+
         {/* Gráfico de arrecadação */}
         <div className="section-title">Arrecadação por dia</div>
         <div className="card">
           <RevenueChart data={series} />
         </div>
 
-        {/* Formas de pagamento */}
-        <div className="section-title">Formas de pagamento</div>
+        {/* Evolução mensal por projeto */}
+        <div className="section-title">Evolução mensal por projeto</div>
         <div className="card">
-          <BillingChart data={billing} />
+          <MonthlyProjectChart data={monthly.data} projects={monthly.projects} />
+        </div>
+
+        {/* Formas de pagamento + Status */}
+        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
+          <div>
+            <div className="section-title">Formas de pagamento</div>
+            <div className="card">
+              <BillingChart data={billing} />
+            </div>
+          </div>
+          <div>
+            <div className="section-title">Status das cobranças</div>
+            <div className="card">
+              <StatusChart data={statusBreakdown} />
+            </div>
+          </div>
+        </div>
+
+        {/* Distribuição por faixa de valor */}
+        <div className="section-title">Distribuição por faixa de valor</div>
+        <div className="card">
+          <AmountBucketsChart data={buckets} />
         </div>
 
         {/* Arrecadação por projeto */}
