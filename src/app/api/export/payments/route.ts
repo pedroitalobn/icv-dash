@@ -1,6 +1,7 @@
 // Exportação das transações do período em CSV (Excel-friendly, separador ;).
 import { NextRequest, NextResponse } from "next/server";
-import { exportPayments, periodToDate, type Period } from "@/lib/queries";
+import { exportPayments } from "@/lib/queries";
+import { parseFilters } from "@/lib/filters";
 import { billingTypeLabel, statusLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -11,19 +12,14 @@ function csvCell(value: unknown): string {
 }
 
 function fmtDate(d: Date | null): string {
-  return d ? d.toLocaleDateString("pt-BR") : "";
+  return d ? new Date(d).toLocaleDateString("pt-BR") : "";
 }
 
 export async function GET(req: NextRequest) {
-  const periodParam = req.nextUrl.searchParams.get("period") ?? "30d";
-  const period = (
-    ["7d", "30d", "90d", "365d", "all"].includes(periodParam)
-      ? periodParam
-      : "30d"
-  ) as Period;
-  const since = periodToDate(period);
+  const query = Object.fromEntries(req.nextUrl.searchParams.entries());
+  const { paymentFilters, period } = parseFilters(query);
 
-  const payments = await exportPayments(since);
+  const payments = await exportPayments(paymentFilters);
 
   const header = [
     "ID",
@@ -45,14 +41,14 @@ export async function GET(req: NextRequest) {
     lines.push(
       [
         p.id,
-        p.customer?.name ?? "",
-        p.customer?.email ?? "",
-        p.customer?.cpfCnpj ?? "",
+        p.customerName ?? "",
+        p.customerEmail ?? "",
+        p.cpfCnpj ?? "",
         billingTypeLabel(p.billingType),
         statusLabel(p.status),
-        p.subscriptionId ? "Sim" : "Não",
-        p.value.toString().replace(".", ","),
-        p.netValue ? p.netValue.toString().replace(".", ",") : "",
+        p.isRecurring ? "Sim" : "Não",
+        (p.value ?? "").replace(".", ","),
+        p.netValue ? p.netValue.replace(".", ",") : "",
         fmtDate(p.paymentDate),
         fmtDate(p.dueDate),
         fmtDate(p.dateCreated),

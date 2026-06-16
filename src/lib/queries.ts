@@ -4,10 +4,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { PAID_STATUSES } from "./format";
 
-export type Period = "7d" | "30d" | "90d" | "365d" | "all";
+export type Period = "7d" | "30d" | "90d" | "365d" | "all" | "custom";
 
 export function periodToDate(period: Period): Date | null {
-  if (period === "all") return null;
+  if (period === "all" || period === "custom") return null;
   const days = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 }[period];
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -20,6 +20,52 @@ const EFFECTIVE_DATE = Prisma.sql`COALESCE("paymentDate", "confirmedDate", "date
 
 const PAID = Prisma.sql`("status" = ANY(${PAID_STATUSES}))`;
 
+/** Fragmento `AND <expr> >= from AND <expr> < until` (partes opcionais). */
+function dateAnd(
+  since: Date | null,
+  until: Date | null,
+  expr: Prisma.Sql = EFFECTIVE_DATE
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (since) parts.push(Prisma.sql`${expr} >= ${since}`);
+  if (until) parts.push(Prisma.sql`${expr} < ${until}`);
+  if (parts.length === 0) return Prisma.empty;
+  return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
+}
+
+// --------------------------- Filtros da lista/export -------------------------
+
+export interface PaymentFilters {
+  since: Date | null;
+  until: Date | null;
+  status?: string | null;
+  billingType?: string | null;
+  recurring?: "recurring" | "oneoff" | null;
+  q?: string | null;
+}
+
+/** Monta o WHERE da listagem de cobranças a partir dos filtros (aliases p./c.). */
+function paymentsWhere(f: PaymentFilters): Prisma.Sql {
+  const conds: Prisma.Sql[] = [Prisma.sql`TRUE`];
+  if (f.since) conds.push(Prisma.sql`${EFFECTIVE_DATE} >= ${f.since}`);
+  if (f.until) conds.push(Prisma.sql`${EFFECTIVE_DATE} < ${f.until}`);
+  if (f.status) conds.push(Prisma.sql`p."status" = ${f.status}`);
+  if (f.billingType) conds.push(Prisma.sql`p."billingType" = ${f.billingType}`);
+  if (f.recurring === "recurring")
+    conds.push(Prisma.sql`p."subscriptionId" IS NOT NULL`);
+  if (f.recurring === "oneoff")
+    conds.push(Prisma.sql`p."subscriptionId" IS NULL`);
+  if (f.q) {
+    const like = `%${f.q}%`;
+    conds.push(
+      Prisma.sql`(c."name" ILIKE ${like} OR c."email" ILIKE ${like} OR c."cpfCnpj" ILIKE ${like})`
+    );
+  }
+  return Prisma.sql`WHERE ${Prisma.join(conds, " AND ")}`;
+}
+
+// --------------------------------- Resumo ------------------------------------
+
 export interface DashboardSummary {
   totalArrecadado: number;
   totalRecebidas: number;
@@ -28,11 +74,10 @@ export interface DashboardSummary {
   doadoresComTresRecorrentes: number;
 }
 
-export async function getSummary(since: Date | null): Promise<DashboardSummary> {
-  const sinceFilter = since
-    ? Prisma.sql`AND ${EFFECTIVE_DATE} >= ${since}`
-    : Prisma.empty;
-
+export async function getSummary(
+  since: Date | null,
+  until: Date | null = null
+): Promise<DashboardSummary> {
   const [agg] = await prisma.$queryRaw<
     { total: number; recebidas: bigint; doadores: bigint }[]
   >(Prisma.sql`
@@ -41,7 +86,7 @@ export async function getSummary(since: Date | null): Promise<DashboardSummary> 
       COUNT(*)::bigint                          AS recebidas,
       COUNT(DISTINCT "customerId")::bigint      AS doadores
     FROM "payments"
-    WHERE ${PAID} ${sinceFilter}
+    WHERE ${PAID} ${dateAnd(since, until)}
   `);
 
   const totalArrecadado = Number(agg?.total ?? 0);
@@ -74,39 +119,21 @@ export async function getDonorsWithNRecurring(n: number): Promise<number> {
   return Number(row?.count ?? 0);
 }
 
-/** Lista os doadores com N cobranças recorrentes (para detalhamento). */
-export async function listDonorsWithNRecurring(n: number) {
-  return prisma.$queryRaw<
-    { id: string; name: string | null; email: string | null; recorrentes: bigint; total: number }[]
-  >(Prisma.sql`
-    SELECT c."id", c."name", c."email",
-           COUNT(p.*)::bigint        AS recorrentes,
-           COALESCE(SUM(p."value"),0)::float8 AS total
-    FROM "payments" p
-    JOIN "customers" c ON c."id" = p."customerId"
-    WHERE p."subscriptionId" IS NOT NULL AND (p."status" = ANY(${PAID_STATUSES}))
-    GROUP BY c."id", c."name", c."email"
-    HAVING COUNT(p.*) = ${n}
-    ORDER BY total DESC
-  `);
-}
-
 export interface TimeSeriesPoint {
   dia: string; // YYYY-MM-DD
   total: number;
 }
 
 /** Série temporal do valor arrecadado por dia, no período. */
-export async function getTimeSeries(since: Date | null): Promise<TimeSeriesPoint[]> {
-  const sinceFilter = since
-    ? Prisma.sql`AND ${EFFECTIVE_DATE} >= ${since}`
-    : Prisma.empty;
-
+export async function getTimeSeries(
+  since: Date | null,
+  until: Date | null = null
+): Promise<TimeSeriesPoint[]> {
   const rows = await prisma.$queryRaw<{ dia: Date; total: number }[]>(Prisma.sql`
     SELECT date_trunc('day', ${EFFECTIVE_DATE}) AS dia,
            COALESCE(SUM("value"), 0)::float8    AS total
     FROM "payments"
-    WHERE ${PAID} ${sinceFilter}
+    WHERE ${PAID} ${dateAnd(since, until)}
     GROUP BY 1
     ORDER BY 1 ASC
   `);
@@ -125,12 +152,9 @@ export interface BillingBreakdown {
 
 /** Arrecadação por forma de pagamento (PIX, boleto, cartão...). */
 export async function getBillingBreakdown(
-  since: Date | null
+  since: Date | null,
+  until: Date | null = null
 ): Promise<BillingBreakdown[]> {
-  const sinceFilter = since
-    ? Prisma.sql`AND ${EFFECTIVE_DATE} >= ${since}`
-    : Prisma.empty;
-
   const rows = await prisma.$queryRaw<
     { billingType: string; total: number; quantidade: bigint }[]
   >(Prisma.sql`
@@ -138,7 +162,7 @@ export async function getBillingBreakdown(
            COALESCE(SUM("value"), 0)::float8 AS total,
            COUNT(*)::bigint                   AS quantidade
     FROM "payments"
-    WHERE ${PAID} ${sinceFilter}
+    WHERE ${PAID} ${dateAnd(since, until)}
     GROUP BY "billingType"
     ORDER BY total DESC
   `);
@@ -163,60 +187,58 @@ export interface PaymentRow {
   isRecurring: boolean;
 }
 
-/** Lista paginada de transações/doações. */
+/** Lista paginada de transações/doações, com filtros. */
 export async function listPayments(opts: {
   page: number;
   pageSize: number;
-  since: Date | null;
+  filters: PaymentFilters;
 }): Promise<{ rows: PaymentRow[]; total: number }> {
-  const { page, pageSize, since } = opts;
-  const where: Prisma.PaymentWhereInput = since
-    ? {
-        OR: [
-          { paymentDate: { gte: since } },
-          { paymentDate: null, confirmedDate: { gte: since } },
-          { paymentDate: null, confirmedDate: null, dateCreated: { gte: since } },
-        ],
-      }
-    : {};
+  const { page, pageSize, filters } = opts;
+  const where = paymentsWhere(filters);
 
-  const [rows, total] = await Promise.all([
-    prisma.payment.findMany({
-      where,
-      orderBy: [{ paymentDate: "desc" }, { dateCreated: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: { customer: { select: { name: true, email: true } } },
-    }),
-    prisma.payment.count({ where }),
-  ]);
+  const rows = await prisma.$queryRaw<
+    {
+      id: string;
+      value: string;
+      billingType: string;
+      status: string;
+      description: string | null;
+      paymentDate: Date | null;
+      dateCreated: Date | null;
+      isRecurring: boolean;
+      customerName: string | null;
+      customerEmail: string | null;
+    }[]
+  >(Prisma.sql`
+    SELECT p."id", p."value"::text AS value, p."billingType", p."status",
+           p."description", p."paymentDate", p."dateCreated",
+           (p."subscriptionId" IS NOT NULL) AS "isRecurring",
+           c."name" AS "customerName", c."email" AS "customerEmail"
+    FROM "payments" p
+    JOIN "customers" c ON c."id" = p."customerId"
+    ${where}
+    ORDER BY COALESCE(p."paymentDate", p."dateCreated") DESC NULLS LAST
+    LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+  `);
 
-  return {
-    total,
-    rows: rows.map((p) => ({
-      id: p.id,
-      value: p.value.toString(),
-      billingType: p.billingType,
-      status: p.status,
-      description: p.description,
-      paymentDate: p.paymentDate,
-      dateCreated: p.dateCreated,
-      customerName: p.customer?.name ?? null,
-      customerEmail: p.customer?.email ?? null,
-      isRecurring: p.subscriptionId != null,
-    })),
-  };
+  const [cnt] = await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`
+    SELECT COUNT(*)::bigint AS total
+    FROM "payments" p
+    JOIN "customers" c ON c."id" = p."customerId"
+    ${where}
+  `);
+
+  return { rows, total: Number(cnt?.total ?? 0) };
 }
 
 // ----------------------- Métricas de recorrência (MRR) -----------------------
 
 export interface RecurringMetrics {
-  mrr: number; // receita recorrente mensal normalizada
+  mrr: number;
   activeSubs: number;
   canceledSubs: number;
 }
 
-/** Normaliza o valor de cada assinatura ativa para uma base mensal e soma (MRR). */
 export async function getRecurringMetrics(): Promise<RecurringMetrics> {
   const [row] = await prisma.$queryRaw<
     { mrr: number; ativos: bigint; cancelados: bigint }[]
@@ -254,11 +276,15 @@ export interface Receivables {
   pendingCount: number;
 }
 
-/** Cobranças vencidas (OVERDUE) e pendentes (PENDING) — valor e quantidade. */
-export async function getReceivables(since: Date | null): Promise<Receivables> {
-  const sinceFilter = since
-    ? Prisma.sql`AND COALESCE("dueDate", "dateCreated") >= ${since}`
-    : Prisma.empty;
+export async function getReceivables(
+  since: Date | null,
+  until: Date | null = null
+): Promise<Receivables> {
+  const dateFilter = dateAnd(
+    since,
+    until,
+    Prisma.sql`COALESCE("dueDate", "dateCreated")`
+  );
 
   const [row] = await prisma.$queryRaw<
     {
@@ -274,7 +300,7 @@ export async function getReceivables(since: Date | null): Promise<Receivables> {
       COALESCE(SUM("value") FILTER (WHERE "status" = 'PENDING'), 0)::float8 AS pending_value,
       COUNT(*) FILTER (WHERE "status" = 'PENDING')::bigint                  AS pending_count
     FROM "payments"
-    WHERE TRUE ${sinceFilter}
+    WHERE TRUE ${dateFilter}
   `);
   return {
     overdueValue: Number(row?.overdue_value ?? 0),
@@ -291,27 +317,25 @@ export interface NewVsReturning {
   recorrentes: number;
 }
 
-/**
- * Doadores no período classificados em NOVOS (1ª doação dentro do período) vs.
- * RECORRENTES (já haviam doado antes do início do período).
- */
 export async function getNewVsReturning(
-  since: Date | null
+  since: Date | null,
+  until: Date | null = null
 ): Promise<NewVsReturning> {
   if (!since) {
     const [r] = await prisma.$queryRaw<{ novos: bigint }[]>(Prisma.sql`
       SELECT COUNT(DISTINCT "customerId")::bigint AS novos
-      FROM "payments" WHERE ${PAID}
+      FROM "payments" WHERE ${PAID} ${dateAnd(null, until)}
     `);
     return { novos: Number(r?.novos ?? 0), recorrentes: 0 };
   }
 
+  const upper = until ? Prisma.sql`AND ${EFFECTIVE_DATE} < ${until}` : Prisma.empty;
   const [row] = await prisma.$queryRaw<{ novos: bigint; recorrentes: bigint }[]>(
     Prisma.sql`
       WITH inperiod AS (
         SELECT DISTINCT "customerId" AS cid
         FROM "payments"
-        WHERE ${PAID} AND ${EFFECTIVE_DATE} >= ${since}
+        WHERE ${PAID} AND ${EFFECTIVE_DATE} >= ${since} ${upper}
       ),
       prior AS (
         SELECT DISTINCT "customerId" AS cid
@@ -334,10 +358,9 @@ export async function getNewVsReturning(
 export interface MonthOverMonth {
   atual: number;
   anterior: number;
-  variacaoPct: number | null; // null quando o mês anterior é zero
+  variacaoPct: number | null;
 }
 
-/** Arrecadação do mês corrente vs. mês anterior, com variação percentual. */
 export async function getMonthOverMonth(): Promise<MonthOverMonth> {
   const [row] = await prisma.$queryRaw<{ atual: number; anterior: number }[]>(
     Prisma.sql`
@@ -372,15 +395,11 @@ export interface TopDonor {
   quantidade: number;
 }
 
-/** Ranking dos maiores doadores no período. */
 export async function getTopDonors(
   since: Date | null,
+  until: Date | null = null,
   limit = 10
 ): Promise<TopDonor[]> {
-  const sinceFilter = since
-    ? Prisma.sql`AND ${EFFECTIVE_DATE} >= ${since}`
-    : Prisma.empty;
-
   const rows = await prisma.$queryRaw<
     { id: string; name: string | null; email: string | null; total: number; quantidade: bigint }[]
   >(Prisma.sql`
@@ -389,7 +408,7 @@ export async function getTopDonors(
            COUNT(*)::bigint                     AS quantidade
     FROM "payments" p
     JOIN "customers" c ON c."id" = p."customerId"
-    WHERE ${PAID} ${sinceFilter}
+    WHERE ${PAID} ${dateAnd(since, until)}
     GROUP BY c."id", c."name", c."email"
     ORDER BY total DESC
     LIMIT ${limit}
@@ -403,22 +422,35 @@ export async function getTopDonors(
   }));
 }
 
-/** Todas as transações do período (para exportação CSV). */
-export async function exportPayments(since: Date | null) {
-  const where: Prisma.PaymentWhereInput = since
-    ? {
-        OR: [
-          { paymentDate: { gte: since } },
-          { paymentDate: null, confirmedDate: { gte: since } },
-          { paymentDate: null, confirmedDate: null, dateCreated: { gte: since } },
-        ],
-      }
-    : {};
-  return prisma.payment.findMany({
-    where,
-    orderBy: [{ paymentDate: "desc" }, { dateCreated: "desc" }],
-    include: { customer: { select: { name: true, email: true, cpfCnpj: true } } },
-  });
+/** Todas as transações que casam com os filtros (para exportação CSV). */
+export async function exportPayments(filters: PaymentFilters) {
+  const where = paymentsWhere(filters);
+  return prisma.$queryRaw<
+    {
+      id: string;
+      value: string;
+      netValue: string | null;
+      billingType: string;
+      status: string;
+      isRecurring: boolean;
+      paymentDate: Date | null;
+      dueDate: Date | null;
+      dateCreated: Date | null;
+      customerName: string | null;
+      customerEmail: string | null;
+      cpfCnpj: string | null;
+    }[]
+  >(Prisma.sql`
+    SELECT p."id", p."value"::text AS value, p."netValue"::text AS "netValue",
+           p."billingType", p."status",
+           (p."subscriptionId" IS NOT NULL) AS "isRecurring",
+           p."paymentDate", p."dueDate", p."dateCreated",
+           c."name" AS "customerName", c."email" AS "customerEmail", c."cpfCnpj"
+    FROM "payments" p
+    JOIN "customers" c ON c."id" = p."customerId"
+    ${where}
+    ORDER BY COALESCE(p."paymentDate", p."dateCreated") DESC NULLS LAST
+  `);
 }
 
 /** Última execução do cron de sincronização. */

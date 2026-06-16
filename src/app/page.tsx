@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { RevenueChart } from "@/components/RevenueChart";
 import { BillingChart } from "@/components/BillingChart";
+import { FiltersBar } from "@/components/FiltersBar";
 import { getCurrentUser } from "@/lib/session";
 import {
   billingTypeLabel,
@@ -21,19 +22,10 @@ import {
   getMonthOverMonth,
   getTopDonors,
   listPayments,
-  periodToDate,
-  type Period,
 } from "@/lib/queries";
+import { parseFilters, buildQuery } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
-
-const PERIODS: { key: Period; label: string }[] = [
-  { key: "7d", label: "7 dias" },
-  { key: "30d", label: "30 dias" },
-  { key: "90d", label: "90 dias" },
-  { key: "365d", label: "12 meses" },
-  { key: "all", label: "Tudo" },
-];
 
 function statusBadge(status: string) {
   const cls =
@@ -50,19 +42,15 @@ function statusBadge(status: string) {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { period?: string; page?: string };
+  searchParams: Record<string, string | string[] | undefined>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const period = (
-    PERIODS.some((p) => p.key === searchParams.period)
-      ? searchParams.period
-      : "30d"
-  ) as Period;
+  const f = parseFilters(searchParams);
+  const { since, untilDate, paymentFilters } = f;
   const page = Math.max(1, Number(searchParams.page ?? "1") || 1);
   const pageSize = 15;
-  const since = periodToDate(period);
 
   const [
     summary,
@@ -76,37 +64,38 @@ export default async function DashboardPage({
     mom,
     topDonors,
   ] = await Promise.all([
-    getSummary(since),
-    getTimeSeries(since),
-    getBillingBreakdown(since),
-    listPayments({ page, pageSize, since }),
+    getSummary(since, untilDate),
+    getTimeSeries(since, untilDate),
+    getBillingBreakdown(since, untilDate),
+    listPayments({ page, pageSize, filters: paymentFilters }),
     getLastSync(),
     getRecurringMetrics(),
-    getReceivables(since),
-    getNewVsReturning(since),
+    getReceivables(since, untilDate),
+    getNewVsReturning(since, untilDate),
     getMonthOverMonth(),
-    getTopDonors(since, 10),
+    getTopDonors(since, untilDate, 10),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(payments.total / pageSize));
-  const buildUrl = (p: Period, pg = 1) => `/?period=${p}&page=${pg}`;
+  // Preserva os filtros atuais ao paginar/exportar.
+  const filterParams = {
+    period: f.period === "custom" ? "" : f.period,
+    from: f.from,
+    until: f.until,
+    status: f.status,
+    forma: f.billingType,
+    rec: f.recurring,
+    q: f.q,
+  };
+  const pageUrl = (pg: number) => buildQuery({ ...filterParams, page: pg });
+  const exportUrl = `/api/export/payments${buildQuery(filterParams)}`;
 
   return (
     <>
       <Topbar email={user.email} />
       <main className="container">
-        {/* Filtros de período */}
-        <div className="filters">
-          {PERIODS.map((p) => (
-            <Link
-              key={p.key}
-              href={buildUrl(p.key)}
-              className={p.key === period ? "active" : ""}
-            >
-              {p.label}
-            </Link>
-          ))}
-        </div>
+        {/* Filtros: período, intervalo de datas, status, forma, recorrência, busca */}
+        <FiltersBar />
 
         {/* KPIs */}
         <div className="grid kpis">
@@ -233,7 +222,7 @@ export default async function DashboardPage({
         >
           <div className="section-title">Doações / transações</div>
           <a
-            href={`/api/export/payments?period=${period}`}
+            href={exportUrl}
             className="btn btn-ghost"
             style={{ padding: "8px 14px", fontSize: 13 }}
           >
@@ -279,7 +268,7 @@ export default async function DashboardPage({
 
         <div className="pagination">
           <Link
-            href={buildUrl(period, Math.max(1, page - 1))}
+            href={pageUrl(Math.max(1, page - 1))}
             className="btn btn-ghost"
             aria-disabled={page <= 1}
             style={page <= 1 ? { pointerEvents: "none", opacity: 0.5 } : {}}
@@ -290,7 +279,7 @@ export default async function DashboardPage({
             Página {page} de {totalPages} · {payments.total} registros
           </span>
           <Link
-            href={buildUrl(period, Math.min(totalPages, page + 1))}
+            href={pageUrl(Math.min(totalPages, page + 1))}
             className="btn btn-ghost"
             aria-disabled={page >= totalPages}
             style={page >= totalPages ? { pointerEvents: "none", opacity: 0.5 } : {}}
