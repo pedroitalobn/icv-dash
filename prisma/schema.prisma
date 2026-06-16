@@ -1,5 +1,8 @@
 // Prisma schema — icv-dash
-// Banco: PostgreSQL. As tabelas são alimentadas pelo cron job que consome a API do Asaas.
+// Schema isolado `icv_dash` que REPLICA a estrutura de `public.donors` e
+// `public.donations` do CRM (mesmos nomes de coluna), porém standalone:
+// sem FKs externas (organizations/campaigns/tiers) e sem triggers de tier.
+// Alimentado pelo cron do Asaas e pela importação das planilhas.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,98 +13,198 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Doador (réplica de public.donors).
+model Donor {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId          String?   @map("organization_id") @db.Uuid
+  ownerId                 String?   @map("owner_id") @db.Uuid
+  donorType               String    @default("individual") @map("donor_type")
+  fullName                String    @map("full_name")
+  displayName             String?   @map("display_name")
+  email                   String?
+  additionalEmails        String[]  @map("additional_emails")
+  phone                   String?
+  mobilePhone             String?   @map("mobile_phone")
+  documentNumber          String?   @map("document_number")
+  documentType            String?   @map("document_type")
+  companyName             String?   @map("company_name")
+  companyDocumentNumber   String?   @map("company_document_number")
+  birthDate               DateTime? @map("birth_date") @db.Date
+  street                  String?
+  number                  String?
+  complement              String?
+  district                String?
+  city                    String?
+  state                   String?
+  postalCode              String?   @map("postal_code")
+  country                 String    @default("BR")
+  source                  String?
+  // --- acréscimos do icv-dash ---
+  project                 String?   // "Cruz da Vida" | "Deixai Vir a Mim"
+  dedupeKey               String    @unique @map("dedupe_key") // chave natural p/ upsert idempotente
+  metadata                Json      @default("{}")
+  rawImportData           Json      @default("{}") @map("raw_import_data")
+  isActive                Boolean   @default(true) @map("is_active")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  donations               Donation[]
+
+  @@index([documentNumber])
+  @@index([email])
+  @@index([project])
+  @@map("donors")
+}
+
+/// Doação / cobrança (réplica de public.donations).
+model Donation {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String?   @map("organization_id") @db.Uuid
+  donorId            String    @map("donor_id") @db.Uuid
+  ownerId            String?   @map("owner_id") @db.Uuid          // responsável pela doação
+  campaignId         String?   @map("campaign_id") @db.Uuid       // campanha (ex.: Natal)
+  categoryId         String?   @map("category_id") @db.Uuid       // categoria da doação
+  channelId          String?   @map("channel_id") @db.Uuid        // canal de captação
+  donationIntentId   String?   @map("donation_intent_id") @db.Uuid
+  amount             Decimal   @db.Decimal(12, 2)
+  originalAmount     Decimal?  @map("original_amount") @db.Decimal(12, 2)
+  netAmount          Decimal?  @map("net_amount") @db.Decimal(12, 2)
+  feeAmount          Decimal?  @map("fee_amount") @db.Decimal(12, 2)
+  currency           String    @default("BRL") @db.Char(3)
+  paymentMethod      String    @default("undefined") @map("payment_method") // pix|boleto|credit_card|debit_card|bank_transfer|other|undefined
+  status             String    @default("pending") // pending|paid|confirmed|overdue|refunded|chargeback|cancelled|failed
+  statusRaw          String?   @map("status_raw")
+  paymentMethodRaw   String?   @map("payment_method_raw")
+  chargeTypeRaw      String?   @map("charge_type_raw")
+  dueDate            DateTime? @map("due_date") @db.Date
+  originalDueDate    DateTime? @map("original_due_date") @db.Date
+  paidAt             DateTime? @map("paid_at") @db.Timestamptz(6)
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  estimatedCreditAt  DateTime? @map("estimated_credit_at") @db.Date
+  creditedAt         DateTime? @map("credited_at") @db.Timestamptz(6)
+  refundedAt         DateTime? @map("refunded_at") @db.Timestamptz(6)
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  boletoNumber       String?   @map("boleto_number")
+  invoiceNumber      String?   @map("invoice_number")
+  invoiceUrl         String?   @map("invoice_url")
+  receiptUrl         String?   @map("receipt_url")
+  description        String?
+  groupsRaw          String?   @map("groups_raw")
+  source             String?
+  sourceFileName     String?   @map("source_file_name")
+  // --- acréscimos do icv-dash ---
+  externalId         String?   @unique @map("external_id") // id da cobrança no provedor (Asaas/planilha) p/ idempotência
+  project            String?   // "Cruz da Vida" | "Deixai Vir a Mim"
+  isRecurring        Boolean   @default(false) @map("is_recurring")
+  importedAt         DateTime? @map("imported_at") @db.Timestamptz(6)
+  metadata           Json      @default("{}")
+  rawImportData      Json      @default("{}") @map("raw_import_data")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  donor              Donor             @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  owner              Owner?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  campaign           Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  category           DonationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  channel            DonationChannel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([donorId])
+  @@index([ownerId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([paymentMethod])
+  @@index([project])
+  @@index([isRecurring])
+  @@index([paidAt])
+  @@index([dueDate])
+  @@map("donations")
+}
+
+/// Responsável pela doação/doador (réplica simplificada de public.owners).
+model Owner {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?    @map("organization_id") @db.Uuid
+  name           String
+  email          String?
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  donations      Donation[]
+
+  @@map("owners")
+}
+
+/// Campanha (ex.: campanha de Natal) — réplica simplificada de public.campaigns.
+model Campaign {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?    @map("organization_id") @db.Uuid
+  name           String
+  code           String?
+  description    String?
+  startDate      DateTime?  @map("start_date") @db.Date
+  endDate        DateTime?  @map("end_date") @db.Date
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  donations      Donation[]
+
+  @@map("campaigns")
+}
+
+/// Categoria da doação — réplica simplificada de public.donation_categories.
+model DonationCategory {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?    @map("organization_id") @db.Uuid
+  name           String
+  code           String?
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  donations      Donation[]
+
+  @@map("donation_categories")
+}
+
+/// Canal de captação — réplica simplificada de public.donation_channels.
+model DonationChannel {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?    @map("organization_id") @db.Uuid
+  name           String
+  code           String?
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  donations      Donation[]
+
+  @@map("donation_channels")
+}
+
 /// Usuário administrador do painel (controle de acesso).
 model AdminUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   name         String?
   passwordHash String
-  role         String   @default("admin") // admin, viewer
-  active       Boolean  @default(true)
+  role         String    @default("admin")
+  active       Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@map("admin_users")
 }
 
-/// Doador (cliente no Asaas).
-model Customer {
-  id            String   @id // id do cliente no Asaas (ex: cus_000...)
-  name          String?
-  email         String?
-  cpfCnpj       String?
-  mobilePhone   String?
-  dateCreated   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  payments      Payment[]
-  subscriptions Subscription[]
-
-  @@index([email])
-  @@map("customers")
-}
-
-/// Assinatura (cobrança recorrente no Asaas).
-model Subscription {
-  id           String    @id // id da assinatura no Asaas (ex: sub_000...)
-  customerId   String
-  status       String?   // ACTIVE, EXPIRED, INACTIVE
-  billingType  String?   // PIX, BOLETO, CREDIT_CARD, UNDEFINED
-  value        Decimal   @db.Decimal(12, 2)
-  cycle        String?   // MONTHLY, WEEKLY, YEARLY...
-  description  String?
-  nextDueDate  DateTime?
-  dateCreated  DateTime?
-  updatedAt    DateTime  @updatedAt
-
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  payments     Payment[]
-
-  @@index([customerId])
-  @@index([status])
-  @@map("subscriptions")
-}
-
-/// Cobrança / doação individual no Asaas.
-model Payment {
-  id             String    @id // id da cobrança no Asaas (ex: pay_000...)
-  customerId     String
-  subscriptionId String?   // preenchido quando a cobrança veio de uma assinatura (recorrente)
-  value          Decimal   @db.Decimal(12, 2)
-  netValue       Decimal?  @db.Decimal(12, 2)
-  billingType    String    // PIX, BOLETO, CREDIT_CARD, UNDEFINED
-  status         String    // PENDING, RECEIVED, CONFIRMED, OVERDUE, REFUNDED...
-  description    String?
-  invoiceUrl     String?
-  dueDate        DateTime?
-  paymentDate    DateTime? // data em que o doador efetivamente pagou
-  confirmedDate  DateTime?
-  dateCreated    DateTime?
-  syncedAt       DateTime  @default(now())
-
-  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-
-  @@index([customerId])
-  @@index([subscriptionId])
-  @@index([status])
-  @@index([billingType])
-  @@index([paymentDate])
-  @@index([dateCreated])
-  @@map("payments")
-}
-
-/// Registro de cada execução do cron de sincronização (auditoria/observabilidade).
+/// Registro de cada execução do cron de sincronização.
 model SyncLog {
   id                Int       @id @default(autoincrement())
   startedAt         DateTime  @default(now())
   finishedAt        DateTime?
-  status            String    @default("running") // running, success, error
-  paymentsProcessed Int       @default(0)
-  customersProcessed Int      @default(0)
-  subscriptionsProcessed Int  @default(0)
+  status            String    @default("running")
+  donationsProcessed Int      @default(0)
+  donorsProcessed   Int       @default(0)
   error             String?
 
   @@map("sync_logs")

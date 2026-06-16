@@ -1,14 +1,15 @@
-// Lógica de sincronização: consome a API do Asaas e alimenta o PostgreSQL.
-// Chamada pelo cron job (endpoint /api/cron/sync) e pelo script scripts/sync.ts.
+// Sincronização Asaas → tabelas donors/donations (schema icv_dash dedicado).
+// Usado pelo cron (/api/cron/sync) e pelo script scripts/sync.ts.
 
 import { subDays } from "date-fns";
-import {
-  asaas,
-  type AsaasCustomer,
-  type AsaasPayment,
-  type AsaasSubscription,
-} from "./asaas";
+import { asaas, type AsaasCustomer, type AsaasPayment } from "./asaas";
 import { prisma } from "./prisma";
+import { donorDedupeKey } from "./donor-key";
+import { mapAsaasBillingType, mapAsaasStatus } from "./format";
+
+// Conta do Asaas que a API key representa (cron = ICV).
+const API_PROJECT = process.env.ASAAS_PROJECT ?? "Cruz da Vida";
+const API_SOURCE = "Asaas API";
 
 function toDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -16,201 +17,172 @@ function toDate(value: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-async function upsertCustomers(items: AsaasCustomer[]) {
-  await prisma.$transaction(
-    items.map((c) =>
-      prisma.customer.upsert({
-        where: { id: c.id },
-        create: {
-          id: c.id,
-          name: c.name,
-          email: c.email,
-          cpfCnpj: c.cpfCnpj,
-          mobilePhone: c.mobilePhone,
-          dateCreated: toDate(c.dateCreated),
-        },
-        update: {
-          name: c.name,
-          email: c.email,
-          cpfCnpj: c.cpfCnpj,
-          mobilePhone: c.mobilePhone,
-          dateCreated: toDate(c.dateCreated),
-        },
-      })
-    )
-  );
+/** Upsert do doador a partir de um cliente do Asaas. Retorna o id interno. */
+async function upsertDonor(c: {
+  externalId?: string | null;
+  name?: string | null;
+  email?: string | null;
+  documentNumber?: string | null;
+  mobilePhone?: string | null;
+  dateCreated?: string | null;
+}): Promise<string> {
+  const dedupeKey = donorDedupeKey({
+    documentNumber: c.documentNumber,
+    email: c.email,
+    externalId: c.externalId,
+    name: c.name,
+  });
+  const data = {
+    fullName: c.name?.trim() || "(sem nome)",
+    email: c.email?.trim() || null,
+    documentNumber: c.documentNumber?.replace(/\D/g, "") || null,
+    mobilePhone: c.mobilePhone?.trim() || null,
+    project: API_PROJECT,
+    source: API_SOURCE,
+  };
+  const donor = await prisma.donor.upsert({
+    where: { dedupeKey },
+    create: { dedupeKey, ...data },
+    update: data,
+    select: { id: true },
+  });
+  return donor.id;
 }
 
-async function upsertSubscriptions(items: AsaasSubscription[]) {
-  // Garante que o cliente exista antes de criar a assinatura (FK).
-  for (const s of items) {
-    await prisma.customer.upsert({
-      where: { id: s.customer },
-      create: { id: s.customer },
-      update: {},
-    });
-  }
-  await prisma.$transaction(
-    items.map((s) =>
-      prisma.subscription.upsert({
-        where: { id: s.id },
-        create: {
-          id: s.id,
-          customerId: s.customer,
-          status: s.status,
-          billingType: s.billingType,
-          value: s.value,
-          cycle: s.cycle,
-          description: s.description,
-          nextDueDate: toDate(s.nextDueDate),
-          dateCreated: toDate(s.dateCreated),
-        },
-        update: {
-          status: s.status,
-          billingType: s.billingType,
-          value: s.value,
-          cycle: s.cycle,
-          description: s.description,
-          nextDueDate: toDate(s.nextDueDate),
-          dateCreated: toDate(s.dateCreated),
-        },
-      })
-    )
-  );
+async function upsertDonation(p: AsaasPayment, donorId: string) {
+  const isRecurring = Boolean(p.subscription);
+  const createData = {
+    donorId,
+    externalId: p.id,
+    amount: p.value,
+    netAmount: p.netValue,
+    paymentMethod: mapAsaasBillingType(p.billingType),
+    status: mapAsaasStatus(p.status),
+    statusRaw: p.status,
+    paymentMethodRaw: p.billingType,
+    chargeTypeRaw: isRecurring ? "recurring" : "one-off",
+    isRecurring,
+    project: API_PROJECT,
+    source: API_SOURCE,
+    description: p.description,
+    invoiceUrl: p.invoiceUrl,
+    dueDate: toDate(p.dueDate),
+    paidAt: toDate(p.paymentDate),
+    confirmedAt: toDate(p.confirmedDate),
+    createdAt: toDate(p.dateCreated) ?? new Date(),
+  };
+  // Em update não mexemos em createdAt (preserva a data de criação original).
+  const { createdAt, ...updateData } = createData;
+  await prisma.donation.upsert({
+    where: { externalId: p.id },
+    create: createData,
+    update: updateData,
+  });
 }
 
-async function upsertPayments(items: AsaasPayment[]) {
-  // Garante o cliente (FK). A assinatura, se existir, já foi sincronizada antes.
-  for (const p of items) {
-    await prisma.customer.upsert({
-      where: { id: p.customer },
-      create: { id: p.customer },
-      update: {},
-    });
-  }
-
-  const knownSubs = new Set(
-    (
-      await prisma.subscription.findMany({
-        where: {
-          id: {
-            in: items
-              .map((p) => p.subscription)
-              .filter((s): s is string => Boolean(s)),
-          },
-        },
-        select: { id: true },
-      })
-    ).map((s) => s.id)
-  );
-
-  await prisma.$transaction(
-    items.map((p) => {
-      // Só vincula a assinatura se ela já existir no banco (respeita a FK).
-      const subscriptionId =
-        p.subscription && knownSubs.has(p.subscription)
-          ? p.subscription
-          : null;
-      const data = {
-        customerId: p.customer,
-        subscriptionId,
-        value: p.value,
-        netValue: p.netValue,
-        billingType: p.billingType,
-        status: p.status,
-        description: p.description,
-        invoiceUrl: p.invoiceUrl,
-        dueDate: toDate(p.dueDate),
-        paymentDate: toDate(p.paymentDate),
-        confirmedDate: toDate(p.confirmedDate),
-        dateCreated: toDate(p.dateCreated),
-        syncedAt: new Date(),
-      };
-      return prisma.payment.upsert({
-        where: { id: p.id },
-        create: { id: p.id, ...data },
-        update: data,
-      });
-    })
-  );
+/** Ingestão de uma única cobrança do Asaas (usado pelo webhook). */
+export async function ingestAsaasPayment(p: AsaasPayment): Promise<void> {
+  const c = await asaas.getCustomer(p.customer).catch(() => null);
+  const donorId = await upsertDonor({
+    externalId: p.customer,
+    name: c?.name,
+    email: c?.email,
+    documentNumber: c?.cpfCnpj,
+    mobilePhone: c?.mobilePhone,
+  });
+  await upsertDonation(p, donorId);
 }
 
 export interface SyncResult {
-  paymentsProcessed: number;
-  customersProcessed: number;
-  subscriptionsProcessed: number;
+  donationsProcessed: number;
+  donorsProcessed: number;
   durationMs: number;
 }
 
-/**
- * Executa a sincronização completa:
- *  1. clientes  2. assinaturas (recorrentes)  3. cobranças.
- *
- * Backfill automático: se a tabela de cobranças estiver vazia (primeira execução),
- * puxa TODO o histórico do Asaas. Depois disso, busca apenas os últimos
- * `lookbackDays` dias (sincronização incremental). Use `options.full` para forçar
- * um backfill completo manualmente.
- */
 export async function runSync(options?: {
   lookbackDays?: number;
   full?: boolean;
 }): Promise<SyncResult> {
   const lookbackDays =
-    options?.lookbackDays ??
-    Number(process.env.SYNC_LOOKBACK_DAYS ?? "35") ??
-    35;
+    options?.lookbackDays ?? Number(process.env.SYNC_LOOKBACK_DAYS ?? "35") ?? 35;
 
   const log = await prisma.syncLog.create({ data: { status: "running" } });
   const startedAt = Date.now();
 
-  let customersProcessed = 0;
-  let subscriptionsProcessed = 0;
-  let paymentsProcessed = 0;
+  let donorsProcessed = 0;
+  let donationsProcessed = 0;
+  // Mapa: id do cliente no Asaas → id interno do doador.
+  const asaasIdToDonor = new Map<string, string>();
 
   try {
-    customersProcessed = await asaas.listCustomers(upsertCustomers);
-    subscriptionsProcessed = await asaas.listSubscriptions(upsertSubscriptions);
+    // 1) Doadores (clientes do Asaas).
+    await asaas.listCustomers(async (items: AsaasCustomer[]) => {
+      for (const c of items) {
+        const donorId = await upsertDonor({
+          externalId: c.id,
+          name: c.name,
+          email: c.email,
+          documentNumber: c.cpfCnpj,
+          mobilePhone: c.mobilePhone,
+          dateCreated: c.dateCreated,
+        });
+        asaasIdToDonor.set(c.id, donorId);
+        donorsProcessed++;
+      }
+    });
 
-    // Primeira execução (banco vazio) → backfill completo de todo o histórico.
-    const existingPayments = await prisma.payment.count();
-    const fullBackfill = options?.full || existingPayments === 0;
+    // 2) Doações (cobranças). Por padrão é incremental — NÃO faz backfill do
+    // histórico (a carga inicial vem da importação das planilhas). Backfill só
+    // sob demanda: options.full ou env SYNC_FULL=true.
+    const fullBackfill = options?.full || process.env.SYNC_FULL === "true";
     const dateCreatedGe = fullBackfill
-      ? undefined // sem filtro de data → Asaas devolve todo o histórico
+      ? undefined
       : subDays(new Date(), lookbackDays).toISOString().slice(0, 10);
-
     console.log(
       fullBackfill
-        ? "[sync] backfill completo (histórico inteiro do Asaas)"
+        ? "[sync] backfill completo do histórico do Asaas"
         : `[sync] incremental (últimos ${lookbackDays} dias)`
     );
-    paymentsProcessed = await asaas.listPayments(dateCreatedGe, upsertPayments);
+
+    await asaas.listPayments(dateCreatedGe, async (items: AsaasPayment[]) => {
+      for (const p of items) {
+        let donorId = asaasIdToDonor.get(p.customer);
+        if (!donorId) {
+          // Cliente não veio na listagem — busca individual e cria o doador.
+          const c = await asaas.getCustomer(p.customer).catch(() => null);
+          donorId = await upsertDonor({
+            externalId: p.customer,
+            name: c?.name,
+            email: c?.email,
+            documentNumber: c?.cpfCnpj,
+            mobilePhone: c?.mobilePhone,
+          });
+          asaasIdToDonor.set(p.customer, donorId);
+          donorsProcessed++;
+        }
+        await upsertDonation(p, donorId);
+        donationsProcessed++;
+      }
+    });
 
     await prisma.syncLog.update({
       where: { id: log.id },
       data: {
         status: "success",
         finishedAt: new Date(),
-        customersProcessed,
-        subscriptionsProcessed,
-        paymentsProcessed,
+        donorsProcessed,
+        donationsProcessed,
       },
     });
-
-    return {
-      customersProcessed,
-      subscriptionsProcessed,
-      paymentsProcessed,
-      durationMs: Date.now() - startedAt,
-    };
+    return { donorsProcessed, donationsProcessed, durationMs: Date.now() - startedAt };
   } catch (err) {
     await prisma.syncLog.update({
       where: { id: log.id },
       data: {
         status: "error",
         finishedAt: new Date(),
-        customersProcessed,
-        subscriptionsProcessed,
-        paymentsProcessed,
+        donorsProcessed,
+        donationsProcessed,
         error: err instanceof Error ? err.message : String(err),
       },
     });

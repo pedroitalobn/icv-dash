@@ -1,8 +1,8 @@
 // Exportação das transações do período em CSV (Excel-friendly, separador ;).
 import { NextRequest, NextResponse } from "next/server";
-import { exportPayments } from "@/lib/queries";
+import { exportDonations } from "@/lib/queries";
 import { parseFilters } from "@/lib/filters";
-import { billingTypeLabel, statusLabel } from "@/lib/format";
+import { paymentMethodLabel, statusLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +19,14 @@ export async function GET(req: NextRequest) {
   const query = Object.fromEntries(req.nextUrl.searchParams.entries());
   const { paymentFilters, period } = parseFilters(query);
 
-  const payments = await exportPayments(paymentFilters);
+  const payments = await exportDonations(paymentFilters);
 
   const header = [
     "ID",
     "Doador",
     "Email",
     "CPF/CNPJ",
+    "Projeto",
     "Forma de pagamento",
     "Status",
     "Recorrente",
@@ -43,8 +44,9 @@ export async function GET(req: NextRequest) {
         p.id,
         p.customerName ?? "",
         p.customerEmail ?? "",
-        p.cpfCnpj ?? "",
-        billingTypeLabel(p.billingType),
+        p.documentNumber ?? "",
+        p.project ?? "",
+        paymentMethodLabel(p.billingType),
         statusLabel(p.status),
         p.isRecurring ? "Sim" : "Não",
         (p.value ?? "").replace(".", ","),

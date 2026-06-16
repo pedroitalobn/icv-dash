@@ -6,13 +6,14 @@ import { BillingChart } from "@/components/BillingChart";
 import { FiltersBar } from "@/components/FiltersBar";
 import { getCurrentUser } from "@/lib/session";
 import {
-  billingTypeLabel,
+  paymentMethodLabel,
   formatBRL,
   formatDate,
   statusLabel,
 } from "@/lib/format";
 import {
-  getBillingBreakdown,
+  getPaymentMethodBreakdown,
+  getProjectBreakdown,
   getSummary,
   getTimeSeries,
   getLastSync,
@@ -21,21 +22,20 @@ import {
   getNewVsReturning,
   getMonthOverMonth,
   getTopDonors,
-  listPayments,
+  listDonations,
 } from "@/lib/queries";
 import { parseFilters, buildQuery } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
 
 function statusBadge(status: string) {
-  const cls =
-    ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(status)
-      ? "green"
-      : status === "PENDING" || status === "AWAITING_RISK_ANALYSIS"
-        ? "yellow"
-        : ["OVERDUE", "REFUNDED", "CHARGEBACK_REQUESTED"].includes(status)
-          ? "red"
-          : "gray";
+  const cls = ["paid", "confirmed"].includes(status)
+    ? "green"
+    : status === "pending"
+      ? "yellow"
+      : ["overdue", "refunded", "chargeback", "cancelled", "failed"].includes(status)
+        ? "red"
+        : "gray";
   return <span className={`badge ${cls}`}>{statusLabel(status)}</span>;
 }
 
@@ -56,6 +56,7 @@ export default async function DashboardPage({
     summary,
     series,
     billing,
+    projects,
     payments,
     lastSync,
     recurring,
@@ -66,8 +67,9 @@ export default async function DashboardPage({
   ] = await Promise.all([
     getSummary(since, untilDate),
     getTimeSeries(since, untilDate),
-    getBillingBreakdown(since, untilDate),
-    listPayments({ page, pageSize, filters: paymentFilters }),
+    getPaymentMethodBreakdown(since, untilDate),
+    getProjectBreakdown(since, untilDate),
+    listDonations({ page, pageSize, filters: paymentFilters }),
     getLastSync(),
     getRecurringMetrics(),
     getReceivables(since, untilDate),
@@ -85,6 +87,7 @@ export default async function DashboardPage({
     status: f.status,
     forma: f.billingType,
     rec: f.recurring,
+    projeto: f.project,
     q: f.q,
   };
   const pageUrl = (pg: number) => buildQuery({ ...filterParams, page: pg });
@@ -181,6 +184,25 @@ export default async function DashboardPage({
           <BillingChart data={billing} />
         </div>
 
+        {/* Arrecadação por projeto */}
+        <div className="section-title">Arrecadação por projeto</div>
+        <div className="grid kpis">
+          {projects.length === 0 && (
+            <div className="card">
+              <div className="muted">Sem doações no período.</div>
+            </div>
+          )}
+          {projects.map((p) => (
+            <div className="card" key={p.project}>
+              <h3>{p.project}</h3>
+              <div className="kpi-value brand">{formatBRL(p.total)}</div>
+              <div className="kpi-sub">
+                {p.quantidade} doações · {p.doadores} doadores
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Top doadores */}
         <div className="section-title">Top doadores</div>
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -234,6 +256,7 @@ export default async function DashboardPage({
             <thead>
               <tr>
                 <th>Doador</th>
+                <th>Projeto</th>
                 <th>Forma</th>
                 <th>Status</th>
                 <th>Data</th>
@@ -243,8 +266,8 @@ export default async function DashboardPage({
             <tbody>
               {payments.rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted" style={{ textAlign: "center", padding: 30 }}>
-                    Nenhuma transação encontrada. Rode a sincronização.
+                  <td colSpan={6} className="muted" style={{ textAlign: "center", padding: 30 }}>
+                    Nenhuma doação encontrada para os filtros.
                   </td>
                 </tr>
               )}
@@ -254,7 +277,8 @@ export default async function DashboardPage({
                     {p.customerName || p.customerEmail || p.id}
                     {p.isRecurring && <span className="tag-recurring">recorrente</span>}
                   </td>
-                  <td>{billingTypeLabel(p.billingType)}</td>
+                  <td className="muted">{p.project ?? "—"}</td>
+                  <td>{paymentMethodLabel(p.billingType)}</td>
                   <td>{statusBadge(p.status)}</td>
                   <td>{formatDate(p.paymentDate ?? p.dateCreated)}</td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
@@ -290,7 +314,7 @@ export default async function DashboardPage({
 
         <p className="muted" style={{ marginTop: 20, fontSize: 12 }}>
           {lastSync
-            ? `Última sincronização: ${formatDate(lastSync.finishedAt ?? lastSync.startedAt)} · status ${lastSync.status} · ${lastSync.paymentsProcessed} cobranças`
+            ? `Última sincronização: ${formatDate(lastSync.finishedAt ?? lastSync.startedAt)} · status ${lastSync.status} · ${lastSync.donationsProcessed} doações`
             : "Nenhuma sincronização executada ainda."}
         </p>
       </main>

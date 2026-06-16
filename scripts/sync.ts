@@ -8,8 +8,8 @@ import { runSync } from "../src/lib/sync";
 runSync()
   .then((r) => {
     console.log(
-      `[sync] ok em ${r.durationMs}ms · ${r.customersProcessed} clientes · ` +
-        `${r.subscriptionsProcessed} assinaturas · ${r.paymentsProcessed} cobranças`
+      `[sync] ok em ${r.durationMs}ms · ${r.donorsProcessed} doadores · ` +
+        `${r.donationsProcessed} doações`
     );
     process.exit(0);
   })

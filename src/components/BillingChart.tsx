@@ -1,7 +1,7 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { billingTypeLabel, formatBRL } from "@/lib/format";
+import { paymentMethodLabel, formatBRL } from "@/lib/format";
 
 interface Slice {
   billingType: string;
@@ -21,7 +21,7 @@ export function BillingChart({ data }: { data: Slice[] }) {
   }
 
   const chartData = data.map((d) => ({
-    name: billingTypeLabel(d.billingType),
+    name: paymentMethodLabel(d.billingType),
     value: d.total,
     quantidade: d.quantidade,
   }));

@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "sync": "tsx scripts/sync.ts",
-    "db:deploy": "prisma db push --skip-generate --accept-data-loss && tsx prisma/seed.ts",
+    "import": "tsx scripts/import.ts",
+    "db:deploy": "prisma db push --skip-generate --accept-data-loss && tsx prisma/seed.ts && tsx scripts/import.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
@@ -26,7 +27,8 @@
     "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",

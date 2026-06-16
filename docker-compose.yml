@@ -1,34 +1,62 @@
-# Deploy no Dokploy (Compose). Defina as variáveis no painel de Environment do Dokploy.
+# Deploy no Dokploy (Compose) — banco PostgreSQL DEDICADO (isolado de tudo).
 #
-# IMPORTANTE (2 pontos que quebram o deploy se errados):
-#  1) DATABASE_URL DEVE terminar com  ?schema=icv_dash  para isolar o app das
-#     tabelas que já existem no schema `public` do banco `cruzdavida`.
-#  2) Na ASAAS_API_KEY, escape o `$` inicial como `$$` (senão o Compose zera o valor).
+# Defina no Environment do Dokploy:
+#   POSTGRES_PASSWORD   (senha do banco do app)
+#   ASAAS_API_KEY       (com o $ inicial escapado como $$ → $$aact_prod_...)
+#   AUTH_SECRET, CRON_SECRET, ASAAS_WEBHOOK_TOKEN
+#   ADMIN_EMAIL, ADMIN_PASSWORD
+#   (opcionais) ASAAS_API_URL, SYNC_ENABLED=true para ligar o cron do Asaas
+#
+# A carga inicial vem da IMPORTAÇÃO das planilhas em data/imports (serviço migrate).
+# O cron do Asaas fica DESLIGADO por padrão (SYNC_ENABLED != true).
 
 x-env: &app-env
-  DATABASE_URL: ${DATABASE_URL}
-  ASAAS_API_URL: ${ASAAS_API_URL}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-icv}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-icvdash}?schema=public
+  ASAAS_API_URL: ${ASAAS_API_URL:-https://api.asaas.com/v3}
   ASAAS_API_KEY: ${ASAAS_API_KEY}
   ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
+  ASAAS_PROJECT: ${ASAAS_PROJECT:-Cruz da Vida}
   CRON_SECRET: ${CRON_SECRET}
   SYNC_LOOKBACK_DAYS: ${SYNC_LOOKBACK_DAYS:-35}
+  SYNC_ENABLED: ${SYNC_ENABLED:-false}
   ADMIN_EMAIL: ${ADMIN_EMAIL}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   AUTH_SECRET: ${AUTH_SECRET}
 
 services:
-  # Inicialização: cria o schema `icv_dash` + tabelas (db push, idempotente) e o admin.
-  # Roda uma vez e encerra; app/cron só sobem após este terminar com sucesso.
+  # Banco de dados dedicado do app.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-icv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-icvdash}
+    volumes:
+      - icv_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-icv} -d ${POSTGRES_DB:-icvdash}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - dokploy-network
+
+  # Inicialização: cria as tabelas (db push), seed do admin e IMPORTA as planilhas.
   migrate:
     build:
       context: .
       dockerfile: Dockerfile
     image: icv-dash:latest
     restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
     environment: *app-env
     command: >
       sh -c "npx prisma db push --skip-generate --accept-data-loss &&
-             npx tsx prisma/seed.ts"
+             npx tsx prisma/seed.ts &&
+             npx tsx scripts/import.ts"
     networks:
       - dokploy-network
 
@@ -46,7 +74,7 @@ services:
     networks:
       - dokploy-network
 
-  # Cron interno: sincroniza com o Asaas a cada 15 minutos (alimenta o banco/dash).
+  # Cron do Asaas (incremental). Só roda se SYNC_ENABLED=true.
   cron:
     image: icv-dash:latest
     restart: unless-stopped
@@ -56,12 +84,19 @@ services:
     environment: *app-env
     command: >
       sh -c "while true; do
-               echo '[cron] sincronizando...';
-               npx tsx scripts/sync.ts || echo '[cron] falhou, tenta no próximo ciclo';
+               if [ \"$$SYNC_ENABLED\" = \"true\" ]; then
+                 echo '[cron] sincronizando Asaas...';
+                 npx tsx scripts/sync.ts || echo '[cron] falhou, tenta no próximo ciclo';
+               else
+                 echo '[cron] desativado (SYNC_ENABLED!=true)';
+               fi;
                sleep 900;
              done"
     networks:
       - dokploy-network
+
+volumes:
+  icv_pgdata:
 
 networks:
   dokploy-network:
