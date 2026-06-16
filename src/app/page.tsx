@@ -15,6 +15,11 @@ import {
   getSummary,
   getTimeSeries,
   getLastSync,
+  getRecurringMetrics,
+  getReceivables,
+  getNewVsReturning,
+  getMonthOverMonth,
+  getTopDonors,
   listPayments,
   periodToDate,
   type Period,
@@ -59,12 +64,28 @@ export default async function DashboardPage({
   const pageSize = 15;
   const since = periodToDate(period);
 
-  const [summary, series, billing, payments, lastSync] = await Promise.all([
+  const [
+    summary,
+    series,
+    billing,
+    payments,
+    lastSync,
+    recurring,
+    receivables,
+    newVs,
+    mom,
+    topDonors,
+  ] = await Promise.all([
     getSummary(since),
     getTimeSeries(since),
     getBillingBreakdown(since),
     listPayments({ page, pageSize, since }),
     getLastSync(),
+    getRecurringMetrics(),
+    getReceivables(since),
+    getNewVsReturning(since),
+    getMonthOverMonth(),
+    getTopDonors(since, 10),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(payments.total / pageSize));
@@ -111,6 +132,54 @@ export default async function DashboardPage({
           </div>
         </div>
 
+        {/* KPIs — recorrência, inadimplência, retenção */}
+        <div className="grid kpis" style={{ marginTop: 16 }}>
+          <div className="card">
+            <h3>MRR (receita recorrente)</h3>
+            <div className="kpi-value brand">{formatBRL(recurring.mrr)}</div>
+            <div className="kpi-sub">
+              {recurring.activeSubs} assinaturas ativas · {recurring.canceledSubs} canceladas
+            </div>
+          </div>
+          <div className="card">
+            <h3>Inadimplência (vencidas)</h3>
+            <div className="kpi-value" style={{ color: "#b91c1c" }}>
+              {formatBRL(receivables.overdueValue)}
+            </div>
+            <div className="kpi-sub">{receivables.overdueCount} cobranças vencidas</div>
+          </div>
+          <div className="card">
+            <h3>A receber (pendentes)</h3>
+            <div className="kpi-value">{formatBRL(receivables.pendingValue)}</div>
+            <div className="kpi-sub">{receivables.pendingCount} cobranças pendentes</div>
+          </div>
+          <div className="card">
+            <h3>Novos vs. recorrentes</h3>
+            <div className="kpi-value">
+              {newVs.novos}
+              <span className="muted" style={{ fontSize: 16, fontWeight: 600 }}>
+                {" "}
+                / {newVs.recorrentes}
+              </span>
+            </div>
+            <div className="kpi-sub">novos doadores / que retornaram</div>
+          </div>
+          <div className="card">
+            <h3>Mês atual vs. anterior</h3>
+            <div className="kpi-value">{formatBRL(mom.atual)}</div>
+            <div className="kpi-sub">
+              {mom.variacaoPct == null ? (
+                "sem base do mês anterior"
+              ) : (
+                <span style={{ color: mom.variacaoPct >= 0 ? "#16a34a" : "#b91c1c" }}>
+                  {mom.variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(mom.variacaoPct).toFixed(1)}%
+                  {" "}vs. {formatBRL(mom.anterior)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Gráfico de arrecadação */}
         <div className="section-title">Arrecadação por dia</div>
         <div className="card">
@@ -123,8 +192,54 @@ export default async function DashboardPage({
           <BillingChart data={billing} />
         </div>
 
+        {/* Top doadores */}
+        <div className="section-title">Top doadores</div>
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>#</th>
+                <th>Doador</th>
+                <th>Doações</th>
+                <th style={{ textAlign: "right" }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topDonors.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                    Sem doadores no período.
+                  </td>
+                </tr>
+              )}
+              {topDonors.map((d, i) => (
+                <tr key={d.id}>
+                  <td className="muted">{i + 1}</td>
+                  <td>{d.name || d.email || d.id}</td>
+                  <td className="muted">{d.quantidade}x</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>
+                    {formatBRL(d.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         {/* Lista de transações */}
-        <div className="section-title">Doações / transações</div>
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+        >
+          <div className="section-title">Doações / transações</div>
+          <a
+            href={`/api/export/payments?period=${period}`}
+            className="btn btn-ghost"
+            style={{ padding: "8px 14px", fontSize: 13 }}
+          >
+            ⬇ Exportar CSV
+          </a>
+        </div>
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table>
             <thead>
