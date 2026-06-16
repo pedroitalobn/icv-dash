@@ -145,9 +145,16 @@ export interface SyncResult {
 /**
  * Executa a sincronização completa:
  *  1. clientes  2. assinaturas (recorrentes)  3. cobranças.
- * `lookbackDays` limita a busca de cobranças às criadas nos últimos N dias.
+ *
+ * Backfill automático: se a tabela de cobranças estiver vazia (primeira execução),
+ * puxa TODO o histórico do Asaas. Depois disso, busca apenas os últimos
+ * `lookbackDays` dias (sincronização incremental). Use `options.full` para forçar
+ * um backfill completo manualmente.
  */
-export async function runSync(options?: { lookbackDays?: number }): Promise<SyncResult> {
+export async function runSync(options?: {
+  lookbackDays?: number;
+  full?: boolean;
+}): Promise<SyncResult> {
   const lookbackDays =
     options?.lookbackDays ??
     Number(process.env.SYNC_LOOKBACK_DAYS ?? "35") ??
@@ -164,9 +171,18 @@ export async function runSync(options?: { lookbackDays?: number }): Promise<Sync
     customersProcessed = await asaas.listCustomers(upsertCustomers);
     subscriptionsProcessed = await asaas.listSubscriptions(upsertSubscriptions);
 
-    const dateCreatedGe = subDays(new Date(), lookbackDays)
-      .toISOString()
-      .slice(0, 10);
+    // Primeira execução (banco vazio) → backfill completo de todo o histórico.
+    const existingPayments = await prisma.payment.count();
+    const fullBackfill = options?.full || existingPayments === 0;
+    const dateCreatedGe = fullBackfill
+      ? undefined // sem filtro de data → Asaas devolve todo o histórico
+      : subDays(new Date(), lookbackDays).toISOString().slice(0, 10);
+
+    console.log(
+      fullBackfill
+        ? "[sync] backfill completo (histórico inteiro do Asaas)"
+        : `[sync] incremental (últimos ${lookbackDays} dias)`
+    );
     paymentsProcessed = await asaas.listPayments(dateCreatedGe, upsertPayments);
 
     await prisma.syncLog.update({
