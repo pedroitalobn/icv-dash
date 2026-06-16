@@ -382,6 +382,34 @@ export async function getReceivables(f: PaymentFilters): Promise<Receivables> {
   };
 }
 
+export interface OverdueMrr {
+  value: number; // receita mensal recorrente em atraso (1 valor por doador)
+  count: number; // doadores recorrentes com cobrança vencida
+}
+
+/**
+ * Inadimplência da recorrência (MRR), SEM o acumulado: para cada doador
+ * recorrente com cobrança vencida, considera apenas UM valor mensal (a parcela
+ * vencida mais recente) — representa quanto de receita mensal está em atraso.
+ */
+export async function getOverdueMrr(f: PaymentFilters): Promise<OverdueMrr> {
+  const [row] = await prisma.$queryRaw<{ value: number; count: bigint }[]>(Prisma.sql`
+    SELECT COALESCE(SUM(t.monthly), 0)::float8 AS value,
+           COUNT(*)::bigint                     AS count
+    FROM (
+      SELECT "donor_id",
+             (array_agg("amount" ORDER BY "due_date" DESC NULLS LAST))[1] AS monthly
+      FROM "donations"
+      WHERE "is_recurring" = true
+        AND "due_date" < CURRENT_DATE
+        AND "status" NOT IN ('paid', 'confirmed', 'refunded', 'cancelled', 'chargeback')
+        ${pScope(f)}
+      GROUP BY "donor_id"
+    ) t
+  `);
+  return { value: Number(row?.value ?? 0), count: Number(row?.count ?? 0) };
+}
+
 // ------------------------ Novos vs. recorrentes / MoM ------------------------
 
 export interface NewVsReturning {

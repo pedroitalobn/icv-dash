@@ -24,6 +24,7 @@ import {
   getLastSync,
   getRecurringMetrics,
   getReceivables,
+  getOverdueMrr,
   getMonthOverMonth,
   getTopDonors,
   getStatusBreakdown,
@@ -70,6 +71,7 @@ export default async function DashboardPage({
     lastSync,
     recurring,
     receivables,
+    overdueMrr,
     recurringDonors,
     mom,
     topDonors,
@@ -86,6 +88,7 @@ export default async function DashboardPage({
     getLastSync(),
     getRecurringMetrics(paymentFilters),
     getReceivables(paymentFilters),
+    getOverdueMrr(paymentFilters),
     listDonorsWithNRecurring(3, paymentFilters),
     getMonthOverMonth(paymentFilters),
     getTopDonors(paymentFilters, 10),
@@ -207,9 +210,13 @@ export default async function DashboardPage({
             <div className="kpi-sub">no período/filtros</div>
           </div>
           <div className="card">
-            <h3>% recorrente</h3>
-            <div className="kpi-value">{extra.recorrenteShare.toFixed(1)}%</div>
-            <div className="kpi-sub">da arrecadação vem de recorrentes</div>
+            <h3>Inadimplência recorrente (MRR)</h3>
+            <div className="kpi-value" style={{ color: "#b91c1c" }}>
+              {formatBRL(overdueMrr.value)}
+            </div>
+            <div className="kpi-sub">
+              {overdueMrr.count} recorrentes em atraso · valor mensal (sem acumulado)
+            </div>
           </div>
           <div className="card">
             <h3>Doadores cadastrados</h3>
