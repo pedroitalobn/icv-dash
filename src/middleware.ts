@@ -30,5 +30,5 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Aplica a tudo, exceto assets estáticos do Next e o logo público.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.svg|logo.png).*)"],
 };

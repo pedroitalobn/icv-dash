@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cruz da Vida">
+  <defs>
+    <linearGradient id="shield" x1="32" y1="3" x2="32" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D23A47"/>
+      <stop offset="1" stop-color="#8E1822"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 3 L58 12 V31 C58 46.5 46.6 56.8 32 61 C17.4 56.8 6 46.5 6 31 V12 Z"
+        fill="url(#shield)" stroke="#C8A14A" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M28 16 H36 V25 H45 V33 H36 V47 H28 V33 H19 V25 H28 Z" fill="#ffffff"/>
+</svg>

@@ -5,7 +5,7 @@ export function Topbar({ email }: { email?: string }) {
   return (
     <div className="topbar">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="logo" src="/logo.png" alt="Cruz da Vida" />
+      <img className="logo" src="/logo.svg" alt="Cruz da Vida" />
       <div>
         <div className="title">Cruz da Vida</div>
         <div className="subtitle">Painel de Doações · Asaas</div>

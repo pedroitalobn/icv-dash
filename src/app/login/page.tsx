@@ -38,7 +38,7 @@ function LoginForm() {
     <div className="login-wrap">
       <form className="login-card" onSubmit={onSubmit}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="Cruz da Vida" />
+        <img src="/logo.svg" alt="Cruz da Vida" />
         <h1>Painel de Doações</h1>
         <p className="hint">Acesse com suas credenciais de administrador</p>
 
