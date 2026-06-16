@@ -75,6 +75,19 @@ duas formas complementares:
   */15 * * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://SEU_DOMINIO/api/cron/sync
   ```
 
+## Deploy no Dokploy (Docker Compose)
+
+O repositório já traz `Dockerfile` e `docker-compose.yml` (serviços **app** + **cron**).
+
+1. No Dokploy, crie um app do tipo **Compose** apontando para este repositório (branch `main`).
+2. Em **Environment**, defina todas as variáveis da tabela acima.
+   - ⚠️ **`ASAAS_API_KEY`**: como a chave começa com `$`, escape como **`$$`** para o
+     Compose não interpretar como variável. Ex.: `ASAAS_API_KEY=$$aact_prod_000...`
+3. Em **Domains**, aponte o domínio para o serviço **app**, porta **3000**.
+4. O serviço `app` roda `prisma migrate deploy` + seed do admin no start; o serviço
+   `cron` sincroniza com o Asaas a cada 15 min.
+5. Auto-deploy: a cada push no `main`, o Dokploy reconstrói e sobe automaticamente.
+
 ## Webhook do Asaas
 
 No painel do Asaas (**Integrações > Webhooks**):
