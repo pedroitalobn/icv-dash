@@ -138,7 +138,7 @@ export default async function DashboardPage({
         <div className="grid kpis">
           <div className="card">
             <h3>Total arrecadado</h3>
-            <div className="kpi-value brand">{formatBRL(summary.totalArrecadado)}</div>
+            <div className="kpi-value green">{formatBRL(summary.totalArrecadado)}</div>
             <div className="kpi-sub">{summary.totalRecebidas} doações recebidas</div>
           </div>
           <div className="card">
@@ -162,23 +162,21 @@ export default async function DashboardPage({
         <div className="grid kpis" style={{ marginTop: 16 }}>
           <div className="card">
             <h3>MRR (receita recorrente)</h3>
-            <div className="kpi-value brand">{formatBRL(recurring.mrr)}</div>
+            <div className="kpi-value green">{formatBRL(recurring.mrr)}</div>
             <div className="kpi-sub">
               {recurring.activeSubs} assinaturas ativas · {recurring.canceledSubs} canceladas
             </div>
           </div>
           <div className="card">
             <h3>Inadimplência (em aberto)</h3>
-            <div className="kpi-value" style={{ color: "#b91c1c" }}>
-              {formatBRL(receivables.overdueValue)}
-            </div>
+            <div className="kpi-value red">{formatBRL(receivables.overdueValue)}</div>
             <div className="kpi-sub">
               {receivables.overdueCount} vencidas (vencimento &lt; hoje)
             </div>
           </div>
           <div className="card">
             <h3>A receber (pendentes)</h3>
-            <div className="kpi-value">{formatBRL(receivables.pendingValue)}</div>
+            <div className="kpi-value amber">{formatBRL(receivables.pendingValue)}</div>
             <div className="kpi-sub">{receivables.pendingCount} cobranças a vencer</div>
           </div>
           <div className="card">
@@ -188,7 +186,7 @@ export default async function DashboardPage({
               {mom.variacaoPct == null ? (
                 "sem base do mês anterior"
               ) : (
-                <span style={{ color: mom.variacaoPct >= 0 ? "#16a34a" : "#b91c1c" }}>
+                <span className={`trend ${mom.variacaoPct >= 0 ? "up" : "down"}`}>
                   {mom.variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(mom.variacaoPct).toFixed(1)}%
                   {" "}vs. {formatBRL(mom.anterior)}
                 </span>
@@ -201,19 +199,17 @@ export default async function DashboardPage({
         <div className="grid kpis" style={{ marginTop: 16 }}>
           <div className="card">
             <h3>Taxa de conversão</h3>
-            <div className="kpi-value">{extra.conversao.toFixed(1)}%</div>
+            <div className="kpi-value green">{extra.conversao.toFixed(1)}%</div>
             <div className="kpi-sub">cobranças que viraram receita</div>
           </div>
           <div className="card">
             <h3>Maior doação</h3>
-            <div className="kpi-value brand">{formatBRL(extra.maiorDoacao)}</div>
+            <div className="kpi-value green">{formatBRL(extra.maiorDoacao)}</div>
             <div className="kpi-sub">no período/filtros</div>
           </div>
           <div className="card">
             <h3>Inadimplência recorrente (MRR)</h3>
-            <div className="kpi-value" style={{ color: "#b91c1c" }}>
-              {formatBRL(overdueMrr.value)}
-            </div>
+            <div className="kpi-value red">{formatBRL(overdueMrr.value)}</div>
             <div className="kpi-sub">
               {overdueMrr.count} recorrentes em atraso · valor mensal (sem acumulado)
             </div>
@@ -264,7 +260,7 @@ export default async function DashboardPage({
           {projects.map((p) => (
             <div className="card" key={p.project}>
               <h3>{p.project}</h3>
-              <div className="kpi-value brand">{formatBRL(p.total)}</div>
+              <div className="kpi-value green">{formatBRL(p.total)}</div>
               <div className="kpi-sub">
                 {p.quantidade} doações · {p.doadores} doadores
               </div>

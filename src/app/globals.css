@@ -13,9 +13,16 @@
   --border: rgba(0, 0, 0, 0.08);
   --hairline: rgba(0, 0, 0, 0.06);
 
+  /* superfícies sutis (viram claras no dark) */
+  --tint: rgba(0, 0, 0, 0.05);
+  --tint-2: rgba(0, 0, 0, 0.09);
+  --tint-weak: rgba(0, 0, 0, 0.02);
+  --topbar-bg: rgba(255, 255, 255, 0.72);
+  --input-bg: #ffffff;
+
   --green: #1d9d54;
-  --red: #d33d3d;
-  --amber: #b8860b;
+  --red: #e0484b;
+  --amber: #c08a1e;
 
   --radius: 20px;
   --radius-sm: 12px;
@@ -25,6 +32,35 @@
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
     "Helvetica Neue", "Inter", system-ui, sans-serif;
+}
+
+/* --------------------------------- Dark mode -------------------------------- */
+body.dark {
+  --brand: #ff5a66;
+  --brand-light: #ff7b85;
+
+  --bg: #000000;
+  --bg-elev: #1c1c1e;
+  --card: rgba(28, 28, 30, 0.72);
+  --text: #f5f5f7;
+  --text-2: #d1d1d6;
+  --muted: #8e8e93;
+  --border: rgba(255, 255, 255, 0.12);
+  --hairline: rgba(255, 255, 255, 0.08);
+
+  --tint: rgba(255, 255, 255, 0.08);
+  --tint-2: rgba(255, 255, 255, 0.14);
+  --tint-weak: rgba(255, 255, 255, 0.04);
+  --topbar-bg: rgba(28, 28, 30, 0.72);
+  --input-bg: #2c2c2e;
+
+  --green: #32d74b;
+  --red: #ff453a;
+  --amber: #ffd60a;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
 }
 
 * {
@@ -60,7 +96,7 @@ a {
   align-items: center;
   gap: 14px;
   padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--topbar-bg);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--hairline);
@@ -99,7 +135,7 @@ a {
   transition: background 0.18s ease, color 0.18s ease;
 }
 .topbar nav a:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--tint);
   color: var(--text);
 }
 .topbar .user {
@@ -111,11 +147,11 @@ a {
 .topbar .btn {
   padding: 7px 14px;
   font-size: 13px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--tint);
   color: var(--text);
 }
 .topbar button:hover {
-  background: rgba(0, 0, 0, 0.09);
+  background: var(--tint-2);
 }
 
 .container {
@@ -127,6 +163,13 @@ a {
 /* Largura total (toggle na topbar) */
 body.wide .container {
   max-width: 100%;
+}
+
+/* Barra de filtros fixa (toggle) */
+body.filters-pinned .filters-bar {
+  position: sticky;
+  top: 70px;
+  z-index: 40;
 }
 
 /* ------------------------- Seções expansíveis ------------------------------- */
@@ -209,6 +252,23 @@ body.wide .container {
 .kpi-value.green {
   color: var(--green);
 }
+.kpi-value.red {
+  color: var(--red);
+}
+.kpi-value.amber {
+  color: var(--amber);
+}
+/* mini indicador de tendência ao lado do número */
+.trend {
+  font-size: 13px;
+  font-weight: 500;
+}
+.trend.up {
+  color: var(--green);
+}
+.trend.down {
+  color: var(--red);
+}
 .kpi-sub {
   font-size: 13px;
   color: var(--muted);
@@ -242,13 +302,13 @@ thead th {
   text-transform: uppercase;
   color: var(--muted);
   letter-spacing: 0.02em;
-  background: rgba(0, 0, 0, 0.015);
+  background: var(--tint-weak);
 }
 tbody tr {
   transition: background 0.15s ease;
 }
 tbody tr:hover {
-  background: rgba(0, 0, 0, 0.025);
+  background: var(--tint-weak);
 }
 tbody tr:last-child td {
   border-bottom: none;
@@ -276,7 +336,7 @@ tbody tr:last-child td {
   color: #b22a2a;
 }
 .badge.gray {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--tint);
   color: var(--text-2);
 }
 .tag-recurring {
@@ -293,7 +353,7 @@ tbody tr:last-child td {
 .filters {
   display: inline-flex;
   gap: 2px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--tint);
   padding: 3px;
   border-radius: 12px;
   margin-bottom: 14px;
@@ -311,7 +371,7 @@ tbody tr:last-child td {
   color: var(--text);
 }
 .filters a.active {
-  background: #fff;
+  background: var(--bg-elev);
   color: var(--brand);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
@@ -343,13 +403,13 @@ button:disabled {
   cursor: default;
 }
 .btn-ghost {
-  background: #fff;
+  background: var(--bg-elev);
   color: var(--text);
   border: 1px solid var(--border);
 }
 .btn-ghost:hover {
-  background: #fff;
-  border-color: rgba(0, 0, 0, 0.16);
+  background: var(--bg-elev);
+  border-color: var(--tint-2);
   filter: none;
 }
 input,
@@ -360,7 +420,7 @@ select {
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-family: var(--font);
-  background: #fff;
+  background: var(--input-bg);
   color: var(--text);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
   -webkit-appearance: none;
