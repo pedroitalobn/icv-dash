@@ -51,6 +51,22 @@ export function statusLabel(status: string | null | undefined): string {
 // Status que contam como "valor efetivamente arrecadado".
 export const PAID_STATUSES = ["paid", "confirmed"];
 
+/**
+ * Exibe apenas o primeiro nome do doador, mascarando os demais com `*`
+ * (privacidade). Ex.: "Maria do Carmo Moreira" → "Maria ** ***** *******".
+ */
+export function maskName(full: string | null | undefined): string {
+  const name = (full ?? "").trim().replace(/\s+/g, " ");
+  if (!name) return "";
+  const parts = name.split(" ");
+  const first = parts[0];
+  if (parts.length === 1) return first;
+  const rest = parts
+    .slice(1)
+    .map((p) => "*".repeat(Math.min(8, Math.max(2, p.length))));
+  return [first, ...rest].join(" ");
+}
+
 // --- Mapeamentos de origem (Asaas API e planilhas) → enums do CRM ---
 
 export function mapAsaasBillingType(billingType: string | null | undefined): string {

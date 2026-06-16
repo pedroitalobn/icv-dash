@@ -10,6 +10,7 @@ import {
   formatBRL,
   formatDate,
   statusLabel,
+  maskName,
 } from "@/lib/format";
 import {
   getPaymentMethodBreakdown,
@@ -226,7 +227,7 @@ export default async function DashboardPage({
               {topDonors.map((d, i) => (
                 <tr key={d.id}>
                   <td className="muted">{i + 1}</td>
-                  <td>{d.name || d.email || d.id}</td>
+                  <td>{maskName(d.name) || d.email || d.id}</td>
                   <td className="muted">{d.quantidade}x</td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
                     {formatBRL(d.total)}
@@ -274,7 +275,7 @@ export default async function DashboardPage({
               {payments.rows.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    {p.customerName || p.customerEmail || p.id}
+                    {maskName(p.customerName) || p.customerEmail || p.id}
                     {p.isRecurring && <span className="tag-recurring">recorrente</span>}
                   </td>
                   <td className="muted">{p.project ?? "—"}</td>
