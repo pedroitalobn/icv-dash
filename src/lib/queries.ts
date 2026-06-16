@@ -428,7 +428,7 @@ export async function getTopDonors(
            COUNT(*)::bigint                      AS quantidade
     FROM "donations" d
     JOIN "donors" c ON c."id" = d."donor_id"
-    WHERE ${PAID} ${dateAnd(since, until)}
+    WHERE ${PAID} ${dateAnd(since, until, Prisma.sql`COALESCE(d."paid_at", d."confirmed_at", d."created_at")`)}
     GROUP BY c."id", c."full_name", c."email"
     ORDER BY total DESC
     LIMIT ${limit}
