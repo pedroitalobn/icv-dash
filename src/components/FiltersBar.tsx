@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   PERIOD_OPTIONS,
   STATUS_OPTIONS,
@@ -14,6 +14,20 @@ export function FiltersBar() {
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    const p = localStorage.getItem("icv-pin-filters") === "1";
+    setPinned(p);
+    document.body.classList.toggle("filters-pinned", p);
+  }, []);
+
+  function togglePin() {
+    const p = !pinned;
+    setPinned(p);
+    localStorage.setItem("icv-pin-filters", p ? "1" : "0");
+    document.body.classList.toggle("filters-pinned", p);
+  }
 
   const period = params.get("period") ?? "30d";
   const hasRange = Boolean(params.get("from") || params.get("until"));
@@ -34,7 +48,7 @@ export function FiltersBar() {
   }
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
+    <div className="card filters-bar" style={{ marginBottom: 16 }}>
       {/* Períodos predefinidos */}
       <div className="filters">
         {PERIOD_OPTIONS.map((p) => (
@@ -144,12 +158,24 @@ export function FiltersBar() {
         </div>
       </div>
 
-      <div style={{ marginTop: 10 }}>
-        <a
-          onClick={() => router.push("/")}
-          style={{ cursor: "pointer", fontSize: 13 }}
-        >
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          gap: 16,
+          alignItems: "center",
+          fontSize: 13,
+        }}
+      >
+        <a onClick={() => router.push("/")} style={{ cursor: "pointer" }}>
           Limpar filtros
+        </a>
+        <a
+          onClick={togglePin}
+          style={{ cursor: "pointer", color: "var(--muted)" }}
+          title="Fixar a barra de filtros ao rolar a página"
+        >
+          {pinned ? "📌 Filtros fixados" : "📌 Fixar filtros"}
         </a>
       </div>
     </div>

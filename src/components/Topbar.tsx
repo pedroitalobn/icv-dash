@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { LogoutButton } from "./LogoutButton";
 import { FullWidthToggle } from "./FullWidthToggle";
+import { ThemeToggle } from "./ThemeToggle";
+import { BrandLogo } from "./BrandLogo";
 
 export function Topbar({ email }: { email?: string }) {
   return (
     <div className="topbar">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="logo" src="/logo.svg" alt="Cruz da Vida" />
+      <BrandLogo className="logo" />
       <div>
         <div className="title">Cruz da Vida</div>
         <div className="subtitle">Painel de Doações · Asaas</div>
@@ -17,6 +18,7 @@ export function Topbar({ email }: { email?: string }) {
         <Link href="/usuarios">Usuários</Link>
       </nav>
       {email && <span className="user">{email}</span>}
+      <ThemeToggle />
       <FullWidthToggle />
       <LogoutButton />
     </div>

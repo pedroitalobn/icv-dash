@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BrandLogo } from "@/components/BrandLogo";
 
 function LoginForm() {
   const router = useRouter();
@@ -37,8 +38,7 @@ function LoginForm() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={onSubmit}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="Cruz da Vida" />
+        <BrandLogo height={68} />
         <h1>Painel de Doações</h1>
         <p className="hint">Acesse com suas credenciais de administrador</p>
 
